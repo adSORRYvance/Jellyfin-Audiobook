@@ -1,0 +1,17 @@
+---
+name: "Audiobook Library"
+guid: "4cecc660-432f-4714-8958-b5da8537e55d"
+version: "0.1.0.0"
+targetAbi: "12.1.0.0"
+framework: "net10.0"
+overview: "Chapter-aware audiobook player with Audible chapters and Author/Series pages"
+description: >
+  Replaces the web player for audiobooks with a chapter-aware player modeled on
+  Audiobookshelf's: whole-book progress with chapter marks, chapter skip, per-book
+  speed and synced resume. Adds Audible chapters and Author/Series pages.
+category: "General"
+owner: "tmorrell"
+artifacts:
+- "Jellyfin.Plugin.AudiobookLibrary.dll"
+changelog: >
+  Plugin skeleton with an empty dashboard page.

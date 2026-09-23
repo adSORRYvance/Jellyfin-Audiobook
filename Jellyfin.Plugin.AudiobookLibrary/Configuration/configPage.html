@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Audiobook Library</title>
+</head>
+<body>
+    <div id="AudiobookLibraryConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="AudiobookLibraryConfigForm">
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Audiobook Library</h2>
+                        <p id="AudiobookLibraryStatus">Loading...</p>
+                    </div>
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            var AudiobookLibraryConfig = {
+                pluginUniqueId: '4cecc660-432f-4714-8958-b5da8537e55d'
+            };
+
+            // A successful load here proves the page, the plugin id and the config file are all wired up
+            document.querySelector('#AudiobookLibraryConfigPage')
+                .addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(AudiobookLibraryConfig.pluginUniqueId).then(function () {
+                        document.querySelector('#AudiobookLibraryStatus').textContent = 'Plugin loaded. Admin tools arrive in a later version.';
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+            document.querySelector('#AudiobookLibraryConfigForm')
+                .addEventListener('submit', function (e) {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(AudiobookLibraryConfig.pluginUniqueId).then(function (config) {
+                        ApiClient.updatePluginConfiguration(AudiobookLibraryConfig.pluginUniqueId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+
+                    e.preventDefault();
+                    return false;
+                });
+        </script>
+    </div>
+</body>
+</html>
