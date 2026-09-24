@@ -19,6 +19,11 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- Middleware and controllers need ASP.NET Core, which the server already ships so nothing extra goes in the zip -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="SerilogAnalyzer" Version="0.15.0" PrivateAssets="All" />
     <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" PrivateAssets="All" />
@@ -28,6 +33,8 @@
   <ItemGroup>
     <None Remove="Configuration\configPage.html" />
     <EmbeddedResource Include="Configuration\configPage.html" />
+    <None Remove="Web\player.js" />
+    <EmbeddedResource Include="Web\player.js" />
   </ItemGroup>
 
 </Project>
