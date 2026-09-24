@@ -1,1 +1,20 @@
-[]
+[
+    {
+        "guid": "4cecc660-432f-4714-8958-b5da8537e55d",
+        "name": "Audiobook Library",
+        "description": "Replaces the web player for audiobooks with a chapter-aware player modeled on Audiobookshelf's: whole-book progress with chapter marks, chapter skip, per-book speed and synced resume. Adds Audible chapters and Author/Series pages.\n",
+        "overview": "Chapter-aware audiobook player with Audible chapters and Author/Series pages",
+        "owner": "tmorrell",
+        "category": "General",
+        "versions": [
+            {
+                "version": "0.1.0.0",
+                "changelog": "Plugin skeleton with an empty dashboard page.\n",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/adSORRYvance/Jellyfin-Audiobook/releases/download/v0.1.0.0/audiobook-library_0.1.0.0.zip",
+                "checksum": "e629f43b92f4ce5ede7d044371f28833",
+                "timestamp": "2026-09-24T17:43:47Z"
+            }
+        ]
+    }
+]
