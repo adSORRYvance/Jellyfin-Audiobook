@@ -46,6 +46,8 @@ jobs:
         working-directory: src
         run: |
           version="${GITHUB_REF_NAME#v}"
+          # JPRM writes the zip straight into --output and fails if the folder isn't there yet
+          mkdir -p "$RUNNER_TEMP/artifacts"
           zip="$(jprm --verbosity=debug plugin build . --version="$version" --output="$RUNNER_TEMP/artifacts")"
           echo "zip=$zip" >> "$GITHUB_OUTPUT"
           echo "name=$(basename "$zip")" >> "$GITHUB_OUTPUT"
