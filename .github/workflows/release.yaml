@@ -66,7 +66,7 @@ jobs:
         working-directory: repo
         run: |
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${{ steps.build.outputs.name }}"
-          jprm --verbosity=debug repo add --plugin-url "$url" manifest.json "${{ steps.build.outputs.zip }}"
+          jprm --verbosity=debug repo add --plugin-url "$url" . "${{ steps.build.outputs.zip }}"
 
       - name: Push manifest.json
         working-directory: repo
