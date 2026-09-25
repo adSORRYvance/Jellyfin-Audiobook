@@ -26,3 +26,6 @@ jobs:
 
       - name: Build
         run: dotnet build Jellyfin.Plugin.AudiobookLibrary.slnx -c Release
+
+      - name: Test
+        run: dotnet test Jellyfin.Plugin.AudiobookLibrary.slnx -c Release --no-build
