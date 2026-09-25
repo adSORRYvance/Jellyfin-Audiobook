@@ -35,6 +35,10 @@
     <EmbeddedResource Include="Configuration\configPage.html" />
     <None Remove="Web\player.js" />
     <EmbeddedResource Include="Web\player.js" />
+    <None Remove="Web\chapter-nav.js" />
+    <EmbeddedResource Include="Web\chapter-nav.js" />
+    <None Remove="Web\player.css" />
+    <EmbeddedResource Include="Web\player.css" />
   </ItemGroup>
 
 </Project>
