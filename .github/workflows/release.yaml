@@ -1,4 +1,5 @@
-# Pushing a tag like v0.1.0.0 builds the plugin zip, attaches it to a GitHub Release, and adds that version to manifest.json on main
+# Pushing a tag like v0.1.0.0 builds the plugin zip, attaches it to a GitHub Release, and adds that version to the manifests on main
+# Finished milestones and major versions (vA.B.0.0) are stable and go in both manifests, anything else is beta and only goes in manifest-beta.json
 name: Release
 
 on:
@@ -9,7 +10,7 @@ on:
 permissions:
   contents: write
 
-# Two tags pushed together would both try to push manifest.json, so run releases one at a time
+# Two tags pushed together would both try to push the manifests, so run releases one at a time
 concurrency:
   group: release
   cancel-in-progress: false
@@ -18,13 +19,25 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Pick channel
+        id: channel
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.0\.0$ ]]; then
+            channel=stable
+          else
+            channel=beta
+          fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "$GITHUB_REF_NAME is a $channel release"
+
       - name: Check out tagged commit
         uses: actions/checkout@v4
         with:
           path: src
 
       # Separate checkout because JPRM rewrites Directory.Build.props in src, and that edit must never reach main
-      - name: Check out main for the manifest
+      - name: Check out main for the manifests
         uses: actions/checkout@v4
         with:
           ref: main
@@ -42,7 +55,7 @@ jobs:
         run: pip install jprm
 
       # Each version keeps its changelog in the plugin catalog for good, so stop before anything is published if it wasn't updated
-      # Comparing against every version already in manifest.json catches a changelog left over from any earlier release
+      # Both manifests are checked, since a beta changelog reused on a later stable release would otherwise slip through
       # PyYAML comes with JPRM
       - name: Check changelog was updated
         run: |
@@ -52,20 +65,21 @@ jobs:
           with open("src/build.yaml") as f:
               changelog = ((yaml.safe_load(f) or {}).get("changelog") or "").strip()
 
-          with open("repo/manifest.json") as f:
-              plugins = json.load(f)
-
           # GitHub reads ::error:: lines from stdout, so print first and then exit
           if not changelog:
               print("::error::build.yaml has no changelog")
               sys.exit(1)
 
-          for plugin in plugins:
-              for version in plugin.get("versions", []):
-                  if (version.get("changelog") or "").strip() == changelog:
-                      print(f"::error::build.yaml changelog is the same as {version['version']}'s. "
-                            "Update it, delete this tag, and tag again")
-                      sys.exit(1)
+          for manifest in ("repo/manifest.json", "repo/manifest-beta.json"):
+              with open(manifest) as f:
+                  plugins = json.load(f)
+
+              for plugin in plugins:
+                  for version in plugin.get("versions", []):
+                      if (version.get("changelog") or "").strip() == changelog:
+                          print(f"::error::build.yaml changelog is the same as {version['version']}'s. "
+                                "Update it, delete this tag, and tag again")
+                          sys.exit(1)
 
           print("Changelog is new")
           EOF
@@ -81,27 +95,42 @@ jobs:
           echo "zip=$zip" >> "$GITHUB_OUTPUT"
           echo "name=$(basename "$zip")" >> "$GITHUB_OUTPUT"
 
+      # Beta releases are marked pre-release so the repo's Latest release keeps pointing at stable
       - name: Create GitHub Release
         working-directory: src
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          flags=()
+          if [ "${{ steps.channel.outputs.channel }}" = beta ]; then
+            flags+=(--prerelease)
+          fi
           gh release create "$GITHUB_REF_NAME" "${{ steps.build.outputs.zip }}" \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes
+            --generate-notes \
+            "${flags[@]}"
 
       # --plugin-url points the manifest at the release asset, so JPRM doesn't copy the zip into the repo
-      - name: Add version to manifest.json
+      # JPRM needs a folder in front of a custom manifest name, a bare manifest-beta.json fails
+      # The beta manifest gets every release, so beta subscribers always see the newest build of either kind
+      - name: Add version to the manifests
+        id: manifests
         working-directory: repo
         run: |
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${{ steps.build.outputs.name }}"
-          jprm --verbosity=debug repo add --plugin-url "$url" . "${{ steps.build.outputs.zip }}"
+          files="manifest-beta.json"
+          jprm --verbosity=debug repo add --plugin-url "$url" ./manifest-beta.json "${{ steps.build.outputs.zip }}"
+          if [ "${{ steps.channel.outputs.channel }}" = stable ]; then
+            jprm --verbosity=debug repo add --plugin-url "$url" ./manifest.json "${{ steps.build.outputs.zip }}"
+            files="manifest.json and manifest-beta.json"
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
 
-      - name: Push manifest.json
+      - name: Push the manifests
         working-directory: repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add manifest.json
-          git commit -m "Add ${GITHUB_REF_NAME} to manifest.json"
+          git add manifest.json manifest-beta.json
+          git commit -m "Add ${GITHUB_REF_NAME} to ${{ steps.manifests.outputs.files }}"
           git push origin main

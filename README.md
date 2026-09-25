@@ -4,21 +4,36 @@ A Jellyfin 12.1 plugin that gives audiobooks a chapter-aware player modeled on A
 
 ## Install
 
-In Jellyfin, go to Dashboard > Plugins > Repositories, add this URL, then install **Audiobook Library** from the Catalog:
+In Jellyfin, go to Dashboard > Plugins > Repositories, add one of these URLs, then install **Audiobook Library** from the Catalog.
+
+**Stable**, updated once per finished milestone:
 
 ```
 https://raw.githubusercontent.com/adSORRYvance/Jellyfin-Audiobook/main/manifest.json
 ```
 
+**Beta**, every feature and fix as it lands, plus the stable releases:
+
+```
+https://raw.githubusercontent.com/adSORRYvance/Jellyfin-Audiobook/main/manifest-beta.json
+```
+
+Add only one. Beta already includes everything in stable.
+
 Requires Jellyfin 12.1 or newer.
 
 ## Release
 
-Push a four-part version tag. The Release workflow builds the zip, attaches it to a GitHub Release and adds it to `manifest.json`.
+Update `changelog` in `build.yaml`, then push a four-part version tag. The Release workflow builds the zip, attaches it to a GitHub Release and adds it to the manifests.
+
+- `vA.B.0.0` (a finished milestone or a major version) is **stable** and goes into both `manifest.json` and `manifest-beta.json`.
+- Anything else (`vA.B.C.0` features, `vA.B.C.D` fixes) is **beta**. It goes into `manifest-beta.json` only, and its GitHub Release is marked as a pre-release.
+
+The workflow stops before publishing anything if the changelog matches a version already in either manifest.
 
 ```sh
-git tag v0.1.0.0
-git push origin v0.1.0.0
+git tag v0.2.0.0
+git push origin v0.2.0.0
 ```
 
 ## Build
