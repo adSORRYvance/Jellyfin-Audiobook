@@ -23,6 +23,7 @@
                 this._audio = null;
                 this._log = null;
                 this._currentSrc = null;
+                this._currentTime = null;
                 this._hiddenAt = null;
             }
 
@@ -57,6 +58,7 @@
 
                 const audio = this._audio;
                 this._currentSrc = options.url;
+                this._currentTime = null;
                 audio.src = options.url;
 
                 const startTicks = options.playerStartPositionTicks || 0;
@@ -75,16 +77,19 @@
 
             stop(destroyPlayer) {
                 const src = this._currentSrc;
+                this._audio?.pause();
+
+                // playbackManager reads currentTime() while handling this to report the stop position
+                // Firing it after the reset made the server save 0 and drop the book from Continue Listening
+                this._events.trigger(this, 'stopped', [{ src }]);
+
                 if (this._audio) {
-                    this._audio.pause();
                     this._audio.removeAttribute('src');
                     this._audio.load();
                 }
 
                 this._currentSrc = null;
-
-                // playbackManager waits for this before it reports the session as stopped
-                this._events.trigger(this, 'stopped', [{ src }]);
+                this._currentTime = null;
 
                 if (destroyPlayer) {
                     this.destroy();
@@ -113,6 +118,11 @@
                 if (val != null) {
                     this._audio.currentTime = val / 1000;
                     return;
+                }
+
+                // Prefer the last timeupdate, the element itself can read 0 once the WebView or an ended event resets it
+                if (this._currentTime) {
+                    return this._currentTime * 1000;
                 }
 
                 return this._audio.currentTime * 1000;
@@ -240,6 +250,7 @@
                     this._events.trigger(this, 'pause');
                 });
                 audio.addEventListener('timeupdate', () => {
+                    this._currentTime = audio.currentTime;
                     this._events.trigger(this, 'timeupdate');
                 });
                 audio.addEventListener('seeked', () => {
