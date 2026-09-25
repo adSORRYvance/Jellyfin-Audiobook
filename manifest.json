@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "0.1.4.1",
+                "changelog": "Fixed: the phone's back button now closes the full-page player and its popups instead of leaving the app.\n",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/adSORRYvance/Jellyfin-Audiobook/releases/download/v0.1.4.1/audiobook-library_0.1.4.1.zip",
+                "checksum": "9409968b3485e45490528504c988d812",
+                "timestamp": "2026-09-25T19:55:43Z"
+            },
+            {
                 "version": "0.1.4.0",
                 "changelog": "Audiobooks get their own now-playing bar in place of Jellyfin's, styled after Audiobookshelf. On phones, tapping the bar opens a full-page player. Speed and chapter popups are no longer covered by the bar.",
                 "targetAbi": "12.1.0.0",
