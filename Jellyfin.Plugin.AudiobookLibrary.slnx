@@ -1,3 +1,6 @@
 <Solution>
   <Project Path="Jellyfin.Plugin.AudiobookLibrary/Jellyfin.Plugin.AudiobookLibrary.csproj" />
+  <Folder Name="/tests/">
+    <Project Path="tests/Jellyfin.Plugin.AudiobookLibrary.Tests/Jellyfin.Plugin.AudiobookLibrary.Tests.csproj" />
+  </Folder>
 </Solution>
