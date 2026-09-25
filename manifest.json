@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "0.1.2.0",
+                "changelog": "Plugin skeleton with an empty dashboard page.\n",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/adSORRYvance/Jellyfin-Audiobook/releases/download/v0.1.2.0/audiobook-library_0.1.2.0.zip",
+                "checksum": "d03dd332a77d0b6a66ade6f1a9996d03",
+                "timestamp": "2026-09-25T05:26:26Z"
+            },
+            {
                 "version": "0.1.1.1",
                 "changelog": "Plugin skeleton with an empty dashboard page.\n",
                 "targetAbi": "12.1.0.0",
