@@ -1,69 +1,153 @@
-/* Audiobook Library player, a full-screen view over jellyfin-web that minimizes to the now-playing bar */
+/* Audiobook Library player, a bar that stands in for Jellyfin's now-playing bar plus a full page on phones */
+/* Colors come from the jellyfin-web theme palette so the player follows whichever theme is picked */
 
-.abl-player {
-    --abl-bg: #101010;
-    --abl-sheet-bg: #1c1c1c;
-    --abl-fg: #eeeeee;
-    --abl-muted: rgba(255, 255, 255, 0.6);
-    --abl-accent: #00a4dc;
-    --abl-tick: rgba(255, 255, 255, 0.55);
-
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    background: var(--abl-bg);
-    color: var(--abl-fg);
-    font-family: inherit;
-    overflow: hidden;
+.abl-bar,
+.abl-page,
+.abl-sheet {
+    --abl-fg: var(--jf-palette-text-primary, #eeeeee);
+    --abl-muted: var(--jf-palette-text-secondary, rgba(255, 255, 255, 0.7));
+    --abl-accent: var(--jf-palette-primary-main, #00a4dc);
+    --abl-page-bg: var(--jf-palette-background-default, #101010);
+    --abl-sheet-bg: var(--jf-palette-background-paper, #202020);
+    --abl-tick: rgba(255, 255, 255, 0.45);
 }
 
 .abl-hidden {
     display: none !important;
 }
 
-.abl-top {
-    display: flex;
-    justify-content: flex-start;
-    padding: 8px;
+/* While our bar is up Jellyfin's stays hidden, and pages get room for our taller bar */
+body.abl-active .nowPlayingBar {
+    display: none !important;
 }
 
-.abl-body {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    width: 100%;
-    max-width: 36em;
-    margin: 0 auto;
-    padding: 0 16px 24px;
-    box-sizing: border-box;
-    overflow-y: auto;
+body.abl-active .content-primary,
+body.abl-active .padded-bottom-page,
+body.abl-active .page,
+body.abl-active .pageWithAbsoluteTabs .pageTabContent {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 8em) !important;
 }
 
-.abl-cover {
-    width: min(70vw, 20em);
-    aspect-ratio: 1;
-    object-fit: cover;
-    border-radius: 8px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+/* Bar */
+
+.abl-bar {
+    color: var(--abl-fg);
+    cursor: default;
+    user-select: none;
 }
 
-.abl-book {
-    font-size: 1.1em;
+/* Only used when jellyfin-web has no footer to put us in */
+.abl-bar.abl-floating {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1201;
+    background: var(--abl-sheet-bg);
+}
+
+.abl-bar-times {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 8px;
+    padding: 2px 16px 0;
+    font-size: 0.8em;
     color: var(--abl-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.abl-bar-times .abl-chapter-title {
+    max-width: 40vw;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     text-align: center;
 }
 
-.abl-chapter {
-    font-size: 1.4em;
-    font-weight: 600;
-    text-align: center;
-    min-height: 1.4em;
+.abl-bar-times .abl-remaining {
+    text-align: right;
 }
+
+.abl-bar-main {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 16px 8px;
+}
+
+.abl-bar-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.abl-bar-cover {
+    width: 56px;
+    height: 56px;
+    flex: none;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.abl-bar-text {
+    min-width: 0;
+    line-height: 1.35;
+}
+
+.abl-bar-text > div {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.abl-book-title {
+    color: var(--abl-fg);
+}
+
+.abl-book-author,
+.abl-book-length {
+    font-size: 0.85em;
+    color: var(--abl-muted);
+}
+
+.abl-bar-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
+.abl-volume {
+    width: 6em;
+    accent-color: var(--abl-accent);
+}
+
+/* Compact bar for the app and narrow windows, tapping it opens the full page */
+
+.abl-bar.abl-compact {
+    cursor: pointer;
+}
+
+.abl-bar.abl-compact .abl-bar-main {
+    grid-template-columns: 1fr auto;
+}
+
+.abl-bar.abl-compact .abl-prev,
+.abl-bar.abl-compact .abl-next,
+.abl-bar.abl-compact .abl-bar-right,
+.abl-bar.abl-compact .abl-book-length,
+.abl-bar.abl-compact .abl-percent {
+    display: none !important;
+}
+
+.abl-bar.abl-compact .abl-bar-cover {
+    width: 48px;
+    height: 48px;
+}
+
+/* Shared controls */
 
 .abl-progress {
     position: relative;
@@ -71,13 +155,14 @@
 }
 
 .abl-seek {
+    display: block;
     width: 100%;
     margin: 0;
     accent-color: var(--abl-accent);
     cursor: pointer;
 }
 
-/* The ticks sit under the slider and let taps through to it, inset to roughly match where the native track starts and ends */
+/* Ticks let taps through to the slider, inset to roughly match where the native track starts and ends */
 .abl-ticks {
     position: absolute;
     inset: 0 8px;
@@ -88,44 +173,36 @@
     position: absolute;
     top: 50%;
     width: 2px;
-    height: 12px;
+    height: 10px;
     margin-left: -1px;
     transform: translateY(-50%);
     background: var(--abl-tick);
-}
-
-.abl-times {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-    font-size: 0.9em;
-    color: var(--abl-muted);
-    font-variant-numeric: tabular-nums;
 }
 
 .abl-controls {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 4px;
 }
 
 .abl-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 48px;
-    min-height: 48px;
+    min-width: 44px;
+    min-height: 44px;
     padding: 0;
     border: 0;
     border-radius: 50%;
     background: none;
     color: inherit;
+    font: inherit;
     cursor: pointer;
 }
 
 .abl-icon .material-icons {
-    font-size: 32px;
+    font-size: 28px;
 }
 
 .abl-icon:disabled {
@@ -134,52 +211,168 @@
 }
 
 .abl-play {
-    min-width: 72px;
-    min-height: 72px;
-    background: var(--abl-fg);
-    color: var(--abl-bg);
-}
-
-.abl-play .material-icons {
-    font-size: 48px;
-}
-
-/* Sleep timer and bookmarks join this row in v1.1 */
-.abl-extras {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px;
+    min-width: 48px;
+    min-height: 48px;
+    background: var(--abl-accent);
+    color: #ffffff;
 }
 
 .abl-text-btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
-    min-height: 48px;
-    padding: 0 16px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 24px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 22px;
     background: none;
     color: inherit;
     font: inherit;
+    font-variant-numeric: tabular-nums;
     cursor: pointer;
 }
 
+/* Full page */
+
+.abl-page {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    display: flex;
+    flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: var(--abl-page-bg);
+    color: var(--abl-fg);
+    overflow-y: auto;
+}
+
+.abl-page-top {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px;
+}
+
+.abl-page-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-evenly;
+    gap: 16px;
+    width: 100%;
+    max-width: 32em;
+    margin: 0 auto;
+    padding: 0 24px 24px;
+    box-sizing: border-box;
+}
+
+.abl-page-cover {
+    width: min(70vw, 22em);
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.abl-page-titles {
+    width: 100%;
+    text-align: center;
+}
+
+.abl-page-titles .abl-page-heading {
+    font-size: 1.4em;
+    min-height: 1.4em;
+}
+
+.abl-page-titles .abl-book-author {
+    font-size: 1em;
+}
+
+.abl-page-progress {
+    width: 100%;
+}
+
+.abl-page-times {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 0.9em;
+    color: var(--abl-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.abl-page .abl-controls {
+    width: 100%;
+    justify-content: space-between;
+}
+
+.abl-page .abl-icon .material-icons {
+    font-size: 36px;
+}
+
+.abl-page .abl-play {
+    min-width: 76px;
+    min-height: 76px;
+}
+
+.abl-page .abl-play .material-icons {
+    font-size: 44px;
+}
+
+/* Sleep timer and bookmarks join this row in v1.1 */
+.abl-page-extras {
+    display: flex;
+    width: 100%;
+    justify-content: space-around;
+    color: var(--abl-muted);
+}
+
+.abl-page-extras .abl-text-btn {
+    font-size: 1.3em;
+}
+
+/* Phones held sideways don't have room for the cover */
+@media (max-height: 520px) {
+    .abl-page-cover {
+        display: none;
+    }
+}
+
+/* Popups */
+
+.abl-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 1305;
+    background: rgba(0, 0, 0, 0.3);
+}
+
 .abl-sheet {
-    position: absolute;
-    left: 0;
-    right: 0;
+    position: fixed;
+    right: 16px;
     bottom: 0;
-    max-height: 70%;
+    z-index: 1310;
+    width: min(24em, calc(100vw - 32px));
+    max-height: 60vh;
     display: flex;
     flex-direction: column;
     gap: 12px;
     padding: 16px;
-    border-radius: 12px 12px 0 0;
+    border-radius: 12px;
     background: var(--abl-sheet-bg);
+    color: var(--abl-fg);
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
     box-sizing: border-box;
+}
+
+.abl-sheet.abl-full-width {
+    left: 0;
+    right: 0;
+    width: auto;
+    border-radius: 12px 12px 0 0;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 
 .abl-sheet-head {
@@ -211,6 +404,11 @@
     gap: 8px;
 }
 
+.abl-preset {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 0 14px;
+}
+
 .abl-preset.abl-current {
     border-color: var(--abl-accent);
     color: var(--abl-accent);
@@ -225,10 +423,11 @@
 
 .abl-chapter-item {
     display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: 16px;
     width: 100%;
-    min-height: 48px;
+    min-height: 44px;
     padding: 0 8px;
     border: 0;
     border-radius: 6px;
@@ -236,7 +435,6 @@
     color: inherit;
     font: inherit;
     text-align: left;
-    align-items: center;
     cursor: pointer;
 }
 
@@ -248,11 +446,4 @@
 .abl-chapter-start {
     color: var(--abl-muted);
     font-variant-numeric: tabular-nums;
-}
-
-/* Phones held sideways don't have room for the cover */
-@media (max-height: 520px) {
-    .abl-cover {
-        display: none;
-    }
 }
