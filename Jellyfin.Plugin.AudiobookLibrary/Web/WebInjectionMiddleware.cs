@@ -105,10 +105,14 @@ public partial class WebInjectionMiddleware
                 return null;
             }
 
-            // A plain script in head runs before the deferred jellyfin-web bundle calls loadPlugins
+            // Plain scripts in head run in order and before the deferred jellyfin-web bundle calls loadPlugins
+            // chapter-nav.js goes first because player.js reads it when the player is created
             var version = typeof(Plugin).Assembly.GetName().Version;
-            var tag = $"<script src=\"{baseUrl}/AudiobookLibrary/web/player.js?v={version}\"></script>";
-            return html.Insert(headEnd, tag);
+            var assets = $"{baseUrl}/AudiobookLibrary/web";
+            var tags = $"<link rel=\"stylesheet\" href=\"{assets}/player.css?v={version}\">"
+                + $"<script src=\"{assets}/chapter-nav.js?v={version}\"></script>"
+                + $"<script src=\"{assets}/player.js?v={version}\"></script>";
+            return html.Insert(headEnd, tags);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

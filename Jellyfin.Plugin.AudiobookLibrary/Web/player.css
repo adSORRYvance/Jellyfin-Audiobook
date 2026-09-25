@@ -1,0 +1,258 @@
+/* Audiobook Library player, a full-screen view over jellyfin-web that minimizes to the now-playing bar */
+
+.abl-player {
+    --abl-bg: #101010;
+    --abl-sheet-bg: #1c1c1c;
+    --abl-fg: #eeeeee;
+    --abl-muted: rgba(255, 255, 255, 0.6);
+    --abl-accent: #00a4dc;
+    --abl-tick: rgba(255, 255, 255, 0.55);
+
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    background: var(--abl-bg);
+    color: var(--abl-fg);
+    font-family: inherit;
+    overflow: hidden;
+}
+
+.abl-hidden {
+    display: none !important;
+}
+
+.abl-top {
+    display: flex;
+    justify-content: flex-start;
+    padding: 8px;
+}
+
+.abl-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 36em;
+    margin: 0 auto;
+    padding: 0 16px 24px;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+.abl-cover {
+    width: min(70vw, 20em);
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 8px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+.abl-book {
+    font-size: 1.1em;
+    color: var(--abl-muted);
+    text-align: center;
+}
+
+.abl-chapter {
+    font-size: 1.4em;
+    font-weight: 600;
+    text-align: center;
+    min-height: 1.4em;
+}
+
+.abl-progress {
+    position: relative;
+    width: 100%;
+}
+
+.abl-seek {
+    width: 100%;
+    margin: 0;
+    accent-color: var(--abl-accent);
+    cursor: pointer;
+}
+
+/* The ticks sit under the slider and let taps through to it, inset to roughly match where the native track starts and ends */
+.abl-ticks {
+    position: absolute;
+    inset: 0 8px;
+    pointer-events: none;
+}
+
+.abl-tick {
+    position: absolute;
+    top: 50%;
+    width: 2px;
+    height: 12px;
+    margin-left: -1px;
+    transform: translateY(-50%);
+    background: var(--abl-tick);
+}
+
+.abl-times {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 0.9em;
+    color: var(--abl-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.abl-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.abl-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    min-height: 48px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+}
+
+.abl-icon .material-icons {
+    font-size: 32px;
+}
+
+.abl-icon:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.abl-play {
+    min-width: 72px;
+    min-height: 72px;
+    background: var(--abl-fg);
+    color: var(--abl-bg);
+}
+
+.abl-play .material-icons {
+    font-size: 48px;
+}
+
+/* Sleep timer and bookmarks join this row in v1.1 */
+.abl-extras {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
+.abl-text-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 48px;
+    padding: 0 16px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 24px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.abl-sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 70%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 12px 12px 0 0;
+    background: var(--abl-sheet-bg);
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
+    box-sizing: border-box;
+}
+
+.abl-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+.abl-speed-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+}
+
+.abl-speed-value {
+    min-width: 4em;
+    text-align: center;
+    font-size: 1.6em;
+    font-variant-numeric: tabular-nums;
+}
+
+.abl-presets {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
+.abl-preset.abl-current {
+    border-color: var(--abl-accent);
+    color: var(--abl-accent);
+}
+
+.abl-chapter-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-y: auto;
+}
+
+.abl-chapter-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    align-items: center;
+    cursor: pointer;
+}
+
+.abl-chapter-item.abl-current {
+    color: var(--abl-accent);
+    font-weight: 600;
+}
+
+.abl-chapter-start {
+    color: var(--abl-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Phones held sideways don't have room for the cover */
+@media (max-height: 520px) {
+    .abl-cover {
+        display: none;
+    }
+}
