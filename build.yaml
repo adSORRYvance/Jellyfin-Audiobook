@@ -16,6 +16,5 @@ artifacts:
 - "Jellyfin.Plugin.AudiobookLibrary.dll"
 # Update before every tag, the release workflow refuses a changelog that any earlier version already used
 changelog: >
-  Audiobooks get their own now-playing bar in place of Jellyfin's, styled after
-  Audiobookshelf. On phones, tapping the bar opens a full-page player. Speed and
-  chapter popups are no longer covered by the bar.
+  Fixed: the phone's back button now closes the full-page player and its popups
+  instead of leaving the app.
