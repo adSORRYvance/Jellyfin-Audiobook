@@ -4,14 +4,17 @@ guid: "4cecc660-432f-4714-8958-b5da8537e55d"
 version: "0.1.0.0"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
-overview: "Chapter-aware audiobook player with Audible chapters and Author/Series pages"
+overview: "Chapter-aware audiobook player for Jellyfin's web client and apps"
 description: >
-  Replaces the web player for audiobooks with a chapter-aware player modeled on
-  Audiobookshelf's: whole-book progress with chapter marks, chapter skip, per-book
-  speed and synced resume. Adds Audible chapters and Author/Series pages.
+  Plays audiobooks in a chapter-aware player styled after Audiobookshelf's. The
+  now-playing bar shows chapter marks and the current chapter, with chapter skip,
+  10-second skips, speed and a chapter list. On phones, tapping the bar opens a
+  full-page player.
 category: "General"
 owner: "tmorrell"
 artifacts:
 - "Jellyfin.Plugin.AudiobookLibrary.dll"
+# Update before every tag, the release workflow refuses a changelog that any earlier version already used
 changelog: >
-  Plugin skeleton with an empty dashboard page.
+  Fixed: the phone's back button now closes the full-page player and its popups
+  instead of leaving the app.

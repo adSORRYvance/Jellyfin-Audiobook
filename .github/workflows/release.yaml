@@ -41,6 +41,35 @@ jobs:
       - name: Install JPRM
         run: pip install jprm
 
+      # Each version keeps its changelog in the plugin catalog for good, so stop before anything is published if it wasn't updated
+      # Comparing against every version already in manifest.json catches a changelog left over from any earlier release
+      # PyYAML comes with JPRM
+      - name: Check changelog was updated
+        run: |
+          python - <<'EOF'
+          import json, sys, yaml
+
+          with open("src/build.yaml") as f:
+              changelog = ((yaml.safe_load(f) or {}).get("changelog") or "").strip()
+
+          with open("repo/manifest.json") as f:
+              plugins = json.load(f)
+
+          # GitHub reads ::error:: lines from stdout, so print first and then exit
+          if not changelog:
+              print("::error::build.yaml has no changelog")
+              sys.exit(1)
+
+          for plugin in plugins:
+              for version in plugin.get("versions", []):
+                  if (version.get("changelog") or "").strip() == changelog:
+                      print(f"::error::build.yaml changelog is the same as {version['version']}'s. "
+                            "Update it, delete this tag, and tag again")
+                      sys.exit(1)
+
+          print("Changelog is new")
+          EOF
+
       - name: Build plugin zip
         id: build
         working-directory: src

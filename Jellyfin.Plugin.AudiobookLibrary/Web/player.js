@@ -113,6 +113,7 @@
                 this._events = deps.events;
                 this._appHost = deps.appHost;
                 this._playbackManager = deps.playbackManager;
+                this._inputManager = deps.inputManager;
                 this._roots = [];
                 this._audio = null;
                 this._item = null;
@@ -213,6 +214,7 @@
             }
 
             destroy() {
+                this._inputManager?.off(document, this._onBackCommand);
                 document.removeEventListener('viewbeforeshow', this._onViewBeforeShow);
                 this._compactQuery?.removeEventListener('change', this._onCompactChange);
                 document.body.classList.remove('abl-active');
@@ -370,6 +372,18 @@
                 this._compactQuery = window.matchMedia(COMPACT_QUERY);
                 this._onCompactChange = () => this._renderCompact();
                 this._compactQuery.addEventListener('change', this._onCompactChange);
+
+                // The Android back button, Esc and remotes all arrive as a back command, and unhandled it exits the app from Home
+                // inputManager.on rather than addEventListener, handleCommand only fires the event when it has registered listeners
+                this._onBackCommand = (e) => {
+                    if (e.detail?.command !== 'back' || !this._closeTopLayer()) {
+                        return;
+                    }
+
+                    e.preventDefault();
+                    e.stopPropagation();
+                };
+                this._inputManager?.on(document, this._onBackCommand);
             }
 
             _onClick(root, e) {
@@ -778,6 +792,22 @@
 
                 sheet.classList.remove('abl-hidden');
                 this._scrim.classList.remove('abl-hidden');
+            }
+
+            // Back closes whatever sits on top, popups before the full page, and reports whether it closed anything
+            _closeTopLayer() {
+                if (this._scrim && !this._scrim.classList.contains('abl-hidden')) {
+                    this._closeSheets();
+                    return true;
+                }
+
+                if (this._pageOpen) {
+                    this._pageOpen = false;
+                    this._renderVisibility();
+                    return true;
+                }
+
+                return false;
             }
 
             _closeSheets() {
