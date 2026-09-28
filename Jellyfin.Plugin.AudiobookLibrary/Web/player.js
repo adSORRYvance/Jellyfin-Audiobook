@@ -398,9 +398,31 @@
 
                 // Tapping the compact bar anywhere that isn't a control opens the full page, like Audiobookshelf's app
                 if (root === this._bar && this._isCompact() && !e.target.closest('button, input')) {
+                    this._hookAppBackButton();
                     this._pageOpen = true;
                     this._renderVisibility();
                 }
+            }
+
+            // The Android app's back button calls NavigationHelper.goBack() directly and never sends a back command
+            // Left alone it goes back a page underneath the full page, then exits the app from Home
+            // It's wrapped here rather than at startup because the app's plugin may load after ours
+            _hookAppBackButton() {
+                const helper = window.NavigationHelper;
+                if (!helper || typeof helper.goBack !== 'function' || helper.goBack.ablWrapped) {
+                    return;
+                }
+
+                const original = helper.goBack;
+                const wrapped = (...args) => {
+                    if (this._closeTopLayer()) {
+                        return undefined;
+                    }
+
+                    return original.apply(helper, args);
+                };
+                wrapped.ablWrapped = true;
+                helper.goBack = wrapped;
             }
 
             _onAction(action) {

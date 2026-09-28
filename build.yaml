@@ -16,5 +16,5 @@ artifacts:
 - "Jellyfin.Plugin.AudiobookLibrary.dll"
 # Update before every tag, the release workflow refuses a changelog that any earlier version already used
 changelog: >
-  Fixed: the phone's back button now closes the full-page player and its popups
-  instead of leaving the app.
+  Fixed: the Android app's back button now closes the full-page player instead
+  of going back a page underneath it.
