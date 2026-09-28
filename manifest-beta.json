@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "0.1.4.2",
+                "changelog": "Fixed: the Android app's back button now closes the full-page player instead of going back a page underneath it.\n",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/adSORRYvance/Jellyfin-Audiobook/releases/download/v0.1.4.2/audiobook-library_0.1.4.2.zip",
+                "checksum": "561b7d7d17408f3f5e0a00fa336cda7c",
+                "timestamp": "2026-09-28T18:52:16Z"
+            },
+            {
                 "version": "0.1.4.1",
                 "changelog": "Fixed: the phone's back button now closes the full-page player and its popups instead of leaving the app.\n",
                 "targetAbi": "12.1.0.0",
