@@ -16,9 +16,7 @@ artifacts:
 - "Jellyfin.Plugin.AudiobookLibrary.dll"
 # Update before every tag, the release workflow refuses a changelog that any earlier version already used
 changelog: >
-  First stable release of the chapter-aware player. Audiobooks get their own
-  now-playing bar styled after Audiobookshelf's, with chapter marks, previous
-  and next chapter, 10-second skips, speed and a chapter list. On phones,
-  tapping the bar opens a full-page player. Chapters work across split M4B and
-  multi-file MP3 books, and stopping keeps your place in Continue Listening.
-  New since 0.1.4.2: playback speed is remembered for each book and each user.
+  Adds a server-side lookup of Audible book details, chapters and author bios
+  through Audnexus, saved on the server so each book is fetched about once a
+  month. Nothing uses it yet; the admin page for matching books arrives in a
+  later release.
