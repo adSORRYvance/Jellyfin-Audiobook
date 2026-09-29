@@ -10,6 +10,9 @@
     const SPEED_STEP = 0.1;
     const SPEED_PRESETS = [0.5, 1, 1.2, 1.5, 2];
 
+    // Tapping + five times in a row sends one save instead of five
+    const SPEED_SAVE_DELAY_MS = 1000;
+
     // jellyfin-web tags <html> with this in the app and on phones, narrow windows get the same layout
     const COMPACT_QUERY = '(max-width: 700px)';
 
@@ -123,6 +126,11 @@
                 this._currentTime = null;
                 this._dragging = false;
                 this._loadToken = 0;
+                this._speedToken = 0;
+                this._speedTouched = false;
+                this._speedTimer = null;
+                this._speedPending = null;
+                this._speedSaving = Promise.resolve();
                 this._active = false;
                 this._pageOpen = false;
                 this._mediaControlAllowed = true;
@@ -179,6 +187,7 @@
                 }
 
                 this._loadChapters(item);
+                this._loadSpeed(item);
 
                 // The WebView can refuse autoplay once the tap is a few awaits behind us, the play button still works then
                 return audio.play().catch((err) => {
@@ -189,6 +198,9 @@
             stop(destroyPlayer) {
                 const src = this._currentSrc;
                 this._audio?.pause();
+
+                // Closing the player right after a speed change shouldn't lose it to the save delay
+                this._flushSpeedSave();
 
                 // playbackManager reads currentTime() while handling this to report the stop position
                 // Firing it after the reset made the server save 0 and drop the book from Continue Listening
@@ -214,6 +226,7 @@
             }
 
             destroy() {
+                this._flushSpeedSave();
                 this._inputManager?.off(document, this._onBackCommand);
                 document.removeEventListener('viewbeforeshow', this._onViewBeforeShow);
                 this._compactQuery?.removeEventListener('change', this._onCompactChange);
@@ -278,14 +291,15 @@
                 return this._audio ? this._audio.paused : false;
             }
 
+            // Only our speed buttons and Jellyfin's remote control call this, so every call is the user picking a speed
             setPlaybackRate(value) {
-                if (this._audio) {
-                    const rate = nav.clampSpeed(Number(value) || 1);
-
-                    // Loading a new src resets playbackRate to defaultPlaybackRate, so set both
-                    this._audio.defaultPlaybackRate = rate;
-                    this._audio.playbackRate = rate;
+                const rate = this._applyRate(value);
+                if (rate == null || !this._item?.Id) {
+                    return;
                 }
+
+                this._speedTouched = true;
+                this._queueSpeedSave(this._item.Id, rate);
             }
 
             getPlaybackRate() {
@@ -569,6 +583,79 @@
                     .catch((err) => {
                         // Without chapters the player still works, it just looks like a book that has none
                         console.warn('Audiobook Library: could not load chapters', err);
+                    });
+            }
+
+            // Speed
+
+            _applyRate(value) {
+                if (!this._audio) {
+                    return null;
+                }
+
+                const rate = nav.clampSpeed(Number(value) || 1);
+
+                // Loading a new src resets playbackRate to defaultPlaybackRate, so set both
+                // That also carries the speed into the next file of a book before its saved speed arrives
+                this._audio.defaultPlaybackRate = rate;
+                this._audio.playbackRate = rate;
+                return rate;
+            }
+
+            _loadSpeed(item) {
+                const token = ++this._speedToken;
+                this._speedTouched = false;
+                const api = window.ApiClient;
+                if (!api || !item.Id) {
+                    return;
+                }
+
+                // A change to the last book may still be waiting, it goes first so this read can't get ahead of it
+                this._flushSpeedSave();
+                this._speedSaving
+                    .then(() => api.getJSON(api.getUrl(`AudiobookLibrary/Books/${item.Id}/Preferences`)))
+                    .then((prefs) => {
+                        // A newer play wins, and so does a speed the user picked while we waited
+                        if (token !== this._speedToken || this._speedTouched) {
+                            return;
+                        }
+
+                        this._applyRate(prefs?.Speed);
+                    })
+                    .catch((err) => {
+                        // The book still plays, just at whatever speed it already had
+                        console.warn('Audiobook Library: could not load speed', err);
+                    });
+            }
+
+            _queueSpeedSave(itemId, rate) {
+                this._speedPending = { itemId, rate };
+                clearTimeout(this._speedTimer);
+                this._speedTimer = setTimeout(() => this._flushSpeedSave(), SPEED_SAVE_DELAY_MS);
+            }
+
+            _flushSpeedSave() {
+                clearTimeout(this._speedTimer);
+                this._speedTimer = null;
+
+                const pending = this._speedPending;
+                this._speedPending = null;
+                const api = window.ApiClient;
+                if (!pending || !api) {
+                    return;
+                }
+
+                // Saves run one after another, so an older speed can never land after a newer one
+                // The catch keeps the chain usable after a failed save
+                this._speedSaving = this._speedSaving
+                    .then(() => api.ajax({
+                        type: 'PUT',
+                        url: api.getUrl(`AudiobookLibrary/Books/${pending.itemId}/Preferences`),
+                        data: JSON.stringify({ Speed: pending.rate }),
+                        contentType: 'application/json'
+                    }))
+                    .catch((err) => {
+                        console.warn('Audiobook Library: could not save speed', err);
                     });
             }
 
