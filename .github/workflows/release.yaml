@@ -1,5 +1,6 @@
-# Pushing a tag like v0.1.0.0 builds the plugin zip, attaches it to a GitHub Release, and adds that version to the manifests on main
-# Finished milestones and major versions (vA.B.0.0) are stable and go in both manifests, anything else is beta and only goes in manifest-beta.json
+# Pushing a version tag publishes a build that already passed its checklist on the test server (scripts/deploy-test.sh)
+# vA.B.C.D-beta is a pre-release and only goes into manifest-beta.json
+# vA.B.C.D is stable and goes into both manifests, and when that version is already in beta it promotes the exact beta zip
 name: Release
 
 on:
@@ -19,17 +20,22 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Pick channel
-        id: channel
+      # Anything that isn't one of the two tag shapes stops here, before a typo gets published
+      - name: Read tag
+        id: tag
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.0\.0$ ]]; then
+          if [[ "$GITHUB_REF_NAME" =~ ^v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)-beta$ ]]; then
+            channel=beta
+          elif [[ "$GITHUB_REF_NAME" =~ ^v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             channel=stable
           else
-            channel=beta
+            echo "::error::Tag $GITHUB_REF_NAME must be vA.B.C.D-beta or vA.B.C.D"
+            exit 1
           fi
+          version="${BASH_REMATCH[1]}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "$GITHUB_REF_NAME is a $channel release"
+          echo "$GITHUB_REF_NAME is version $version on the $channel channel"
 
       - name: Check out tagged commit
         uses: actions/checkout@v4
@@ -54,10 +60,52 @@ jobs:
       - name: Install JPRM
         run: pip install jprm
 
+      # A stable tag for a version already in beta is a promotion, the same build moves to stable users
+      # Publishing a version twice on one channel, or going from stable back to beta, is refused
+      - name: Decide release kind
+        id: kind
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          CHANNEL: ${{ steps.tag.outputs.channel }}
+        run: |
+          python - <<'EOF'
+          import json, os, sys
+
+          version, channel = os.environ["VERSION"], os.environ["CHANNEL"]
+
+          def entry(path):
+              with open(path) as f:
+                  for plugin in json.load(f):
+                      for v in plugin.get("versions", []):
+                          if v["version"] == version:
+                              return v
+              return None
+
+          in_stable = entry("repo/manifest.json")
+          in_beta = entry("repo/manifest-beta.json")
+
+          # GitHub reads ::error:: lines from stdout, so print first and then exit
+          if in_stable:
+              print(f"::error::{version} is already a stable release")
+              sys.exit(1)
+          if channel == "beta" and in_beta:
+              print(f"::error::{version} is already in beta. Test the next version and tag that instead")
+              sys.exit(1)
+
+          promotion = channel == "stable" and in_beta is not None
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"promotion={'true' if promotion else 'false'}\n")
+              if promotion:
+                  out.write(f"checksum={in_beta['checksum']}\n")
+
+          print(f"Promoting beta {version} to stable" if promotion else f"New {channel} release {version}")
+          EOF
+
       # Each version keeps its changelog in the plugin catalog for good, so stop before anything is published if it wasn't updated
-      # Both manifests are checked, since a beta changelog reused on a later stable release would otherwise slip through
+      # Both manifests are checked, since a beta changelog reused on a later release would otherwise slip through
       # PyYAML comes with JPRM
       - name: Check changelog was updated
+        if: steps.kind.outputs.promotion == 'false'
         run: |
           python - <<'EOF'
           import json, sys, yaml
@@ -65,7 +113,6 @@ jobs:
           with open("src/build.yaml") as f:
               changelog = ((yaml.safe_load(f) or {}).get("changelog") or "").strip()
 
-          # GitHub reads ::error:: lines from stdout, so print first and then exit
           if not changelog:
               print("::error::build.yaml has no changelog")
               sys.exit(1)
@@ -86,45 +133,71 @@ jobs:
 
       - name: Build plugin zip
         id: build
+        if: steps.kind.outputs.promotion == 'false'
         working-directory: src
         run: |
-          version="${GITHUB_REF_NAME#v}"
           # JPRM writes the zip straight into --output and fails if the folder isn't there yet
           mkdir -p "$RUNNER_TEMP/artifacts"
-          zip="$(jprm --verbosity=debug plugin build . --version="$version" --output="$RUNNER_TEMP/artifacts")"
+          zip="$(jprm --verbosity=debug plugin build . --version="${{ steps.tag.outputs.version }}" --output="$RUNNER_TEMP/artifacts")"
           echo "zip=$zip" >> "$GITHUB_OUTPUT"
-          echo "name=$(basename "$zip")" >> "$GITHUB_OUTPUT"
+
+      # The checksum check proves stable users get the very zip beta users ran
+      - name: Fetch the beta zip
+        id: promote
+        if: steps.kind.outputs.promotion == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/artifacts"
+          gh release download "v${{ steps.tag.outputs.version }}-beta" \
+            --repo "$GITHUB_REPOSITORY" --pattern '*.zip' --dir "$RUNNER_TEMP/artifacts"
+          zip="$(ls "$RUNNER_TEMP"/artifacts/*.zip)"
+          actual="$(md5sum "$zip" | cut -d' ' -f1)"
+          if [ "$actual" != "${{ steps.kind.outputs.checksum }}" ]; then
+            echo "::error::Beta zip checksum $actual doesn't match manifest-beta.json"
+            exit 1
+          fi
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
 
       # Beta releases are marked pre-release so the repo's Latest release keeps pointing at stable
       - name: Create GitHub Release
+        id: release
         working-directory: src
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          flags=()
-          if [ "${{ steps.channel.outputs.channel }}" = beta ]; then
-            flags+=(--prerelease)
+          zip="${{ steps.build.outputs.zip || steps.promote.outputs.zip }}"
+          flags=(--title "$GITHUB_REF_NAME")
+          if [ "${{ steps.tag.outputs.channel }}" = beta ]; then
+            flags+=(--prerelease --generate-notes)
+          elif [ "${{ steps.kind.outputs.promotion }}" = true ]; then
+            flags+=(--notes "Promotes v${{ steps.tag.outputs.version }}-beta to stable. Same build, no changes.")
+          else
+            flags+=(--generate-notes)
           fi
-          gh release create "$GITHUB_REF_NAME" "${{ steps.build.outputs.zip }}" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            "${flags[@]}"
+          gh release create "$GITHUB_REF_NAME" "$zip" "${flags[@]}"
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$zip")" >> "$GITHUB_OUTPUT"
 
-      # --plugin-url points the manifest at the release asset, so JPRM doesn't copy the zip into the repo
+      # --plugin-url points the manifest at this release's asset, so JPRM doesn't copy the zip into the repo
       # JPRM needs a folder in front of a custom manifest name, a bare manifest-beta.json fails
-      # The beta manifest gets every release, so beta subscribers always see the newest build of either kind
+      # The beta manifest gets every new release, a promotion is already there
       - name: Add version to the manifests
         id: manifests
         working-directory: repo
         run: |
-          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${{ steps.build.outputs.name }}"
-          files="manifest-beta.json"
-          jprm --verbosity=debug repo add --plugin-url "$url" ./manifest-beta.json "${{ steps.build.outputs.zip }}"
-          if [ "${{ steps.channel.outputs.channel }}" = stable ]; then
-            jprm --verbosity=debug repo add --plugin-url "$url" ./manifest.json "${{ steps.build.outputs.zip }}"
-            files="manifest.json and manifest-beta.json"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${{ steps.release.outputs.name }}"
+          zip="${{ steps.release.outputs.zip }}"
+          files=()
+          if [ "${{ steps.kind.outputs.promotion }}" = false ]; then
+            jprm --verbosity=debug repo add --plugin-url "$url" ./manifest-beta.json "$zip"
+            files+=(manifest-beta.json)
           fi
-          echo "files=$files" >> "$GITHUB_OUTPUT"
+          if [ "${{ steps.tag.outputs.channel }}" = stable ]; then
+            jprm --verbosity=debug repo add --plugin-url "$url" ./manifest.json "$zip"
+            files+=(manifest.json)
+          fi
+          echo "files=${files[*]}" >> "$GITHUB_OUTPUT"
 
       - name: Push the manifests
         working-directory: repo
