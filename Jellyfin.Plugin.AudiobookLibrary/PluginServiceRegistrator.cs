@@ -1,4 +1,6 @@
+using System;
 using System.IO;
+using Jellyfin.Plugin.AudiobookLibrary.Audible;
 using Jellyfin.Plugin.AudiobookLibrary.Chapters;
 using Jellyfin.Plugin.AudiobookLibrary.Preferences;
 using Jellyfin.Plugin.AudiobookLibrary.Web;
@@ -23,9 +25,31 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<BookChapterService>();
 
         // A singleton so every request shares the one lock around the speed files
-        // Under Jellyfin's data folder rather than ours, since a plugin update deletes the old version's folder
         serviceCollection.AddSingleton(services => new SpeedStore(
-            Path.Combine(services.GetRequiredService<IApplicationPaths>().DataPath, "audiobook-library", "speeds"),
+            DataFolder(services, "speeds"),
             services.GetRequiredService<ILogger<SpeedStore>>()));
+
+        // The User-Agent tells the Audnexus maintainer who's calling if we ever cause trouble
+        serviceCollection.AddHttpClient(AudnexusClient.HttpClientName, client =>
+        {
+            client.BaseAddress = new Uri("https://api.audnex.us/");
+            client.Timeout = TimeSpan.FromSeconds(15);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                $"JellyfinAudiobookLibrary/{typeof(Plugin).Assembly.GetName().Version} (+https://github.com/adSORRYvance/Jellyfin-Audiobook)");
+        });
+        serviceCollection.AddSingleton(services => new AudnexusCache(
+            DataFolder(services, "audnexus"),
+            services.GetRequiredService<ILogger<AudnexusCache>>()));
+
+        // A singleton so a rate limit seen by one request holds back all the others
+        serviceCollection.AddSingleton(services => new AudnexusClient(
+            services.GetRequiredService<System.Net.Http.IHttpClientFactory>(),
+            services.GetRequiredService<AudnexusCache>(),
+            TimeProvider.System,
+            services.GetRequiredService<ILogger<AudnexusClient>>()));
     }
+
+    // Under Jellyfin's data folder rather than ours, since a plugin update deletes the old version's folder
+    private static string DataFolder(IServiceProvider services, string name)
+        => Path.Combine(services.GetRequiredService<IApplicationPaths>().DataPath, "audiobook-library", name);
 }
