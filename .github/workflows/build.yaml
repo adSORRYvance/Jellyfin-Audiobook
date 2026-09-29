@@ -8,10 +8,12 @@ on:
     paths-ignore:
       - '**/*.md'
       - 'manifest.json'
+      - 'manifest-beta.json'
   pull_request:
     paths-ignore:
       - '**/*.md'
       - 'manifest.json'
+      - 'manifest-beta.json'
   workflow_dispatch:
 
 jobs:

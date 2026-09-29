@@ -24,17 +24,33 @@ Requires Jellyfin 12.1 or newer.
 
 ## Release
 
-Update `changelog` in `build.yaml`, then push a four-part version tag. The Release workflow builds the zip, attaches it to a GitHub Release and adds it to the manifests.
+A tag publishes a build that already passed its checklist on a test server. Nothing is tagged to find out whether it works.
 
-- `vA.B.0.0` (a finished milestone or a major version) is **stable** and goes into both `manifest.json` and `manifest-beta.json`.
-- Anything else (`vA.B.C.0` features, `vA.B.C.D` fixes) is **beta**. It goes into `manifest-beta.json` only, and its GitHub Release is marked as a pre-release.
+1. **Pick the version** you'll release, for example `0.1.5.0`.
+2. **Deploy a dev build** of your branch to the test server, stamped with that version:
 
-The workflow stops before publishing anything if the changelog matches a version already in either manifest.
+   ```sh
+   cp scripts/deploy-test.env.example scripts/deploy-test.env   # once, then fill it in
+   scripts/deploy-test.sh 0.1.5.0
+   ```
 
-```sh
-git tag v0.2.0.0
-git push origin v0.2.0.0
-```
+   The script builds into `dist/dev/` and prints a one-line command to run on a **relay machine**, one that can SSH to both your build machine and the test server without a password. The relay streams the build into the Jellyfin container and restarts it, so the build machine and the server never need access to each other. With `TEST_API_KEY` set, the script then waits until the server reports the new version.
+
+   To check the relay once: `ssh -o BatchMode=yes <workspace host> true && ssh -o BatchMode=yes <server host> 'docker ps -q >/dev/null' && echo ok`
+
+   Jellyfin keeps only the newest version of a plugin, so the dev build replaces the installed release. Redeploy as often as you like. `--local-only` only builds.
+3. **Run the checklist** and fix anything that fails on the branch.
+4. **Update `changelog` in `build.yaml`**, merge, and tag the merge commit:
+
+| Tag | Channel | Result |
+|---|---|---|
+| `v0.1.5.0-beta` | beta | Pre-release, added to `manifest-beta.json` |
+| `v0.2.0.0` | stable | Release, added to both manifests |
+| `v0.1.5.0` after `v0.1.5.0-beta` | stable | **Promotion**: the beta zip is republished unchanged and added to `manifest.json` |
+
+The workflow refuses any other tag shape, a version already published on the same channel, a beta of a version that's already stable, and a changelog matching any published version. A promotion reuses the beta's changelog, so it needs no `build.yaml` change.
+
+The catalog release of the version you tested counts as already installed on the test server, so there's nothing to reinstall afterwards.
 
 ## Build
 
