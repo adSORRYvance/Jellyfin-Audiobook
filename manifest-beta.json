@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "0.2.1.0",
+                "changelog": "Adds a server-side lookup of Audible book details, chapters and author bios through Audnexus, saved on the server so each book is fetched about once a month. Nothing uses it yet; the admin page for matching books arrives in a later release.\n",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/adSORRYvance/Jellyfin-Audiobook/releases/download/v0.2.1.0-beta/audiobook-library_0.2.1.0.zip",
+                "checksum": "9a8e293870a1ae6711408902f71fe89a",
+                "timestamp": "2026-09-29T23:09:42Z"
+            },
+            {
                 "version": "0.2.0.0",
                 "changelog": "First stable release of the chapter-aware player. Audiobooks get their own now-playing bar styled after Audiobookshelf's, with chapter marks, previous and next chapter, 10-second skips, speed and a chapter list. On phones, tapping the bar opens a full-page player. Chapters work across split M4B and multi-file MP3 books, and stopping keeps your place in Continue Listening. New since 0.1.4.2: playback speed is remembered for each book and each user.\n",
                 "targetAbi": "12.1.0.0",
