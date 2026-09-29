@@ -5,3 +5,5 @@ obj/
 artifacts
 dist/
 scripts/deploy-test.env
+scripts/deploy-test.env.example
+scripts/deploy-test.sh

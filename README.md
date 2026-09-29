@@ -27,18 +27,7 @@ Requires Jellyfin 12.1 or newer.
 A tag publishes a build that already passed its checklist on a test server. Nothing is tagged to find out whether it works.
 
 1. **Pick the version** you'll release, for example `0.1.5.0`.
-2. **Deploy a dev build** of your branch to the test server, stamped with that version:
-
-   ```sh
-   cp scripts/deploy-test.env.example scripts/deploy-test.env   # once, then fill it in
-   scripts/deploy-test.sh 0.1.5.0
-   ```
-
-   The script builds into `dist/dev/` and prints a one-line command to run on a **relay machine**, one that can SSH to both your build machine and the test server without a password. The relay streams the build into the Jellyfin container and restarts it, so the build machine and the server never need access to each other. With `TEST_API_KEY` set, the script then waits until the server reports the new version.
-
-   To check the relay once: `ssh -o BatchMode=yes <workspace host> true && ssh -o BatchMode=yes <server host> 'docker ps -q >/dev/null' && echo ok`
-
-   Jellyfin keeps only the newest version of a plugin, so the dev build replaces the installed release. Redeploy as often as you like. `--local-only` only builds.
+2. **Deploy a dev build** of your branch to a test server, stamped with that version (`-p:Version=0.1.5.0`) and with a `meta.json` next to the DLL. Jellyfin keeps only the newest version of a plugin, so the dev build replaces the installed release.
 3. **Run the checklist** and fix anything that fails on the branch.
 4. **Update `changelog` in `build.yaml`**, merge, and tag the merge commit:
 
