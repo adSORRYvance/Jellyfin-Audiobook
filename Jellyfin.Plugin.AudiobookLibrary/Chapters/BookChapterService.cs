@@ -62,6 +62,25 @@ public partial class BookChapterService
         return BookTimeline.Build(TrackOrder.Sort(sources, playlist));
     }
 
+    /// <summary>
+    /// Finds the key per-book settings are saved under, the same for every file of the book.
+    /// </summary>
+    /// <param name="itemId">Any AudioBook item of the book.</param>
+    /// <param name="user">The calling user, or null for an API key.</param>
+    /// <returns>The key, or null when the item is missing, hidden from the user or not an audiobook.</returns>
+    public BookKey? GetBookKey(Guid itemId, User? user)
+    {
+        if (_libraryManager.GetItemById<BaseItem>(itemId, user) is not AudioBook file)
+        {
+            return null;
+        }
+
+        // The folder's id comes from its path, so moving or renaming the folder starts the book's settings over
+        var folder = file.GetParent() as Folder;
+        var title = file.Album ?? folder?.Name ?? file.Name ?? string.Empty;
+        return new BookKey(folder?.Id ?? file.Id, title);
+    }
+
     private List<AudioBook> GetBookFiles(Folder folder, User? user, AudioBook requested)
     {
         var files = _libraryManager.GetItemList(new InternalItemsQuery(user)
