@@ -3,6 +3,7 @@ using System.IO;
 using Jellyfin.Plugin.AudiobookLibrary.Audible;
 using Jellyfin.Plugin.AudiobookLibrary.Chapters;
 using Jellyfin.Plugin.AudiobookLibrary.Preferences;
+using Jellyfin.Plugin.AudiobookLibrary.Silences;
 using Jellyfin.Plugin.AudiobookLibrary.Web;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
@@ -47,6 +48,18 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             services.GetRequiredService<AudnexusCache>(),
             TimeProvider.System,
             services.GetRequiredService<ILogger<AudnexusClient>>()));
+
+        serviceCollection.AddSingleton<ISilenceScanner, FfmpegSilenceScanner>();
+        serviceCollection.AddSingleton(services => new SilenceCache(
+            DataFolder(services, "silences"),
+            services.GetRequiredService<ILogger<SilenceCache>>()));
+
+        // A singleton so one ffmpeg at a time holds across every request, and shutdown stops what's running
+        serviceCollection.AddSingleton(services => new SilenceJobs(
+            services.GetRequiredService<ISilenceScanner>(),
+            services.GetRequiredService<SilenceCache>(),
+            TimeProvider.System,
+            services.GetRequiredService<ILogger<SilenceJobs>>()));
     }
 
     // Under Jellyfin's data folder rather than ours, since a plugin update deletes the old version's folder
