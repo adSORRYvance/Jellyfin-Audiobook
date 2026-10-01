@@ -16,7 +16,7 @@ artifacts:
 - "Jellyfin.Plugin.AudiobookLibrary.dll"
 # Update before every tag, the release workflow refuses a changelog that any earlier version already used
 changelog: >
-  Adds a server-side lookup of Audible book details, chapters and author bios
-  through Audnexus, saved on the server so each book is fetched about once a
-  month. Nothing uses it yet; the admin page for matching books arrives in a
-  later release.
+  Adds silence detection for books without chapters. The server scans a file
+  with Jellyfin's own ffmpeg in the background and suggests chapter breaks from
+  long pauses. Nothing uses it yet; the admin page for reviewing and applying
+  chapters arrives in a later release.
