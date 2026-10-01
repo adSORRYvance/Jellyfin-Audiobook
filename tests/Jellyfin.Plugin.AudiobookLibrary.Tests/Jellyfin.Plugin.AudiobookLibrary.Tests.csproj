@@ -20,6 +20,16 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- The plugin leaves out Jellyfin's DLLs because the server has them, tests that touch Jellyfin types need their own copy -->
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="12.1.0" />
+  </ItemGroup>
+
+  <!-- Real ffmpeg output and chapter times from The Lost Metal, used to check the silence tuning -->
+  <ItemGroup>
+    <None Update="Silences\TestData\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\Jellyfin.Plugin.AudiobookLibrary\Jellyfin.Plugin.AudiobookLibrary.csproj" />
   </ItemGroup>
