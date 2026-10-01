@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "0.2.2.0",
+                "changelog": "Adds silence detection for books without chapters. The server scans a file with Jellyfin's own ffmpeg in the background and suggests chapter breaks from long pauses. Nothing uses it yet; the admin page for reviewing and applying chapters arrives in a later release.\n",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/adSORRYvance/Jellyfin-Audiobook/releases/download/v0.2.2.0-beta/audiobook-library_0.2.2.0.zip",
+                "checksum": "3949bf64cfc84e16b5330f5d5a4c5394",
+                "timestamp": "2026-10-01T19:39:53Z"
+            },
+            {
                 "version": "0.2.1.0",
                 "changelog": "Adds a server-side lookup of Audible book details, chapters and author bios through Audnexus, saved on the server so each book is fetched about once a month. Nothing uses it yet; the admin page for matching books arrives in a later release.\n",
                 "targetAbi": "12.1.0.0",
