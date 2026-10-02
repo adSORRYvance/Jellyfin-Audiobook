@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "0.2.3.0",
+                "changelog": "Adds safe chapter writing for M4B files. Chapters go into a copy without re-encoding, the copy is checked against the original (same audio, length and tags) before replacing it, and the original is kept as a .bak that can be restored. Nothing uses it yet; the admin page arrives in the next release.\n",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/adSORRYvance/Jellyfin-Audiobook/releases/download/v0.2.3.0-beta/audiobook-library_0.2.3.0.zip",
+                "checksum": "ea8853bc7da983ff8f65a43b2e6c8a07",
+                "timestamp": "2026-10-02T18:21:33Z"
+            },
+            {
                 "version": "0.2.2.0",
                 "changelog": "Adds silence detection for books without chapters. The server scans a file with Jellyfin's own ffmpeg in the background and suggests chapter breaks from long pauses. Nothing uses it yet; the admin page for reviewing and applying chapters arrives in a later release.\n",
                 "targetAbi": "12.1.0.0",
