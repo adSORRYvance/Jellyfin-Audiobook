@@ -1,6 +1,4 @@
-using System.Reflection;
 using Jellyfin.Plugin.AudiobookLibrary.Silences;
-using MediaBrowser.Controller.MediaEncoding;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -39,9 +37,7 @@ public class FfmpegSilenceScannerTests
 
         try
         {
-            var encoder = DispatchProxy.Create<IMediaEncoder, EncoderPathOnly>();
-            ((EncoderPathOnly)(object)encoder).Path = ffmpeg!;
-            var scanner = new FfmpegSilenceScanner(encoder, NullLogger<FfmpegSilenceScanner>.Instance);
+            var scanner = new FfmpegSilenceScanner(MediaEncoderPaths.Create(ffmpeg!, string.Empty), NullLogger<FfmpegSilenceScanner>.Instance);
             var progress = new List<double>();
 
             var silences = await scanner.ScanAsync(file, -30, progress.Add, token);
@@ -55,14 +51,5 @@ public class FfmpegSilenceScannerTests
         {
             File.Delete(file);
         }
-    }
-
-    // IMediaEncoder is large and the scanner only reads EncoderPath, so everything else throws
-    public class EncoderPathOnly : DispatchProxy
-    {
-        public string Path { get; set; } = string.Empty;
-
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-            => targetMethod?.Name == "get_EncoderPath" ? Path : throw new NotSupportedException(targetMethod?.Name);
     }
 }

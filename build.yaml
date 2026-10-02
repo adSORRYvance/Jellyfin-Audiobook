@@ -16,7 +16,7 @@ artifacts:
 - "Jellyfin.Plugin.AudiobookLibrary.dll"
 # Update before every tag, the release workflow refuses a changelog that any earlier version already used
 changelog: >
-  Adds silence detection for books without chapters. The server scans a file
-  with Jellyfin's own ffmpeg in the background and suggests chapter breaks from
-  long pauses. Nothing uses it yet; the admin page for reviewing and applying
-  chapters arrives in a later release.
+  Adds safe chapter writing for M4B files. Chapters go into a copy without
+  re-encoding, the copy is checked against the original (same audio, length
+  and tags) before replacing it, and the original is kept as a .bak that can
+  be restored. Nothing uses it yet; the admin page arrives in the next release.
