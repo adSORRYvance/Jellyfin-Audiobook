@@ -69,6 +69,45 @@ public sealed partial class SilenceCache
         }
     }
 
+    /// <summary>
+    /// Moves an item's saved scans from the old file to its replacement, when the sound is known to be the same.
+    /// Only scans that matched the old file move, one that was already out of date stays that way.
+    /// </summary>
+    /// <param name="itemId">The item.</param>
+    /// <param name="path">The file.</param>
+    /// <param name="oldSize">The old file's size.</param>
+    /// <param name="oldModifiedUtc">The old file's modified time.</param>
+    /// <param name="newSize">The new file's size.</param>
+    /// <param name="newModifiedUtc">The new file's modified time.</param>
+    /// <returns>How many scans moved.</returns>
+    public int Restamp(Guid itemId, string path, long oldSize, DateTime oldModifiedUtc, long newSize, DateTime newModifiedUtc)
+    {
+        if (!Directory.Exists(_folder))
+        {
+            return 0;
+        }
+
+        var moved = 0;
+        var pattern = string.Create(CultureInfo.InvariantCulture, $"{itemId:N}.*.json");
+        foreach (var file in Directory.EnumerateFiles(_folder, pattern))
+        {
+            var noise = Path.GetFileNameWithoutExtension(file).Split('.')[^1];
+            if (!int.TryParse(noise, NumberStyles.Integer, CultureInfo.InvariantCulture, out var noiseDb))
+            {
+                continue;
+            }
+
+            var scan = Read(itemId, noiseDb);
+            if (scan is not null && scan.Path == path && scan.FileSize == oldSize && scan.FileModifiedUtc == oldModifiedUtc)
+            {
+                Write(scan with { FileSize = newSize, FileModifiedUtc = newModifiedUtc });
+                moved++;
+            }
+        }
+
+        return moved;
+    }
+
     private string PathFor(Guid itemId, int noiseDb)
         => Path.Combine(_folder, string.Create(CultureInfo.InvariantCulture, $"{itemId:N}.{noiseDb}.json"));
 

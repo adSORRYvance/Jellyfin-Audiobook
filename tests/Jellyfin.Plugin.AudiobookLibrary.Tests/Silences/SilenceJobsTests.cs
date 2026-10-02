@@ -144,8 +144,13 @@ public sealed class SilenceJobsTests : IDisposable
         var failed = await WaitFor(() => _jobs.Get(_book), SilenceJobState.Failed);
         Assert.Equal("ffmpeg stopped with exit code 1: Invalid data found when processing input", failed.Error);
 
+        // A job says Running a moment before it calls the scanner, so wait for the scan itself
         _jobs.Start(_book);
-        await WaitFor(() => _jobs.Get(_book), SilenceJobState.Running);
+        for (var i = 0; i < 500 && _scanner.Started < 2; i++)
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+
         Assert.Equal(2, _scanner.Started);
     }
 
@@ -175,8 +180,13 @@ public sealed class SilenceJobsTests : IDisposable
         await File.AppendAllTextAsync(_book.Path, " with new chapters", TestContext.Current.CancellationToken);
 
         Assert.Null(_jobs.Get(_book));
+        // A job says Running a moment before it calls the scanner, so wait for the scan itself
         _jobs.Start(_book);
-        await WaitFor(() => _jobs.Get(_book), SilenceJobState.Running);
+        for (var i = 0; i < 500 && _scanner.Started < 2; i++)
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+
         Assert.Equal(2, _scanner.Started);
     }
 

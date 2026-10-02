@@ -94,21 +94,57 @@ public sealed partial class AudnexusClient
     public Task<AudnexusResult<AudibleAuthor>> GetAuthorAsync(string asin, string region, CancellationToken cancellationToken)
         => GetAsync<AudibleAuthor>("authors", asin, region, a => $"authors/{a}", cancellationToken);
 
-    private async Task<AudnexusResult<T>> GetAsync<T>(string kind, string asin, string region, Func<string, string> path, CancellationToken cancellationToken)
-        where T : class
+    /// <summary>
+    /// Cleans up an ASIN someone typed and checks it's one we can safely look up.
+    /// </summary>
+    /// <param name="asin">The ASIN as typed.</param>
+    /// <param name="normalized">The trimmed, upper-case ASIN.</param>
+    /// <returns>False when it isn't ten letters and digits.</returns>
+    public static bool TryNormalizeAsin(string? asin, out string normalized)
     {
         // The ASIN ends up in a URL and a file name, so anything but ten letters and digits stops here
         // Upper case because people paste ASINs from all sorts of places and Audible's are always upper case
-        asin = (asin ?? string.Empty).Trim().ToUpperInvariant();
-        if (!AsinPattern().IsMatch(asin))
+        normalized = (asin ?? string.Empty).Trim().ToUpperInvariant();
+        return AsinPattern().IsMatch(normalized);
+    }
+
+    /// <summary>
+    /// Cleans up a region and checks it's one of Audible's stores.
+    /// </summary>
+    /// <param name="region">The region as given.</param>
+    /// <param name="normalized">The trimmed, lower-case region.</param>
+    /// <returns>False when Audnexus doesn't know the region.</returns>
+    public static bool TryNormalizeRegion(string? region, out string normalized)
+    {
+        normalized = (region ?? string.Empty).Trim().ToLowerInvariant();
+        return Regions.Contains(normalized);
+    }
+
+    /// <summary>
+    /// Gets the message for an ASIN that failed <see cref="TryNormalizeAsin"/>.
+    /// </summary>
+    /// <param name="asin">The normalized ASIN.</param>
+    /// <returns>A message a person can read.</returns>
+    public static string BadAsinMessage(string asin) => $"'{asin}' isn't an ASIN, those are 10 letters and digits like B09N446YK7";
+
+    /// <summary>
+    /// Gets the message for a region that failed <see cref="TryNormalizeRegion"/>.
+    /// </summary>
+    /// <param name="region">The normalized region.</param>
+    /// <returns>A message a person can read.</returns>
+    public static string BadRegionMessage(string region) => $"'{region}' isn't an Audible region, use one of {string.Join(", ", Regions)}";
+
+    private async Task<AudnexusResult<T>> GetAsync<T>(string kind, string asin, string region, Func<string, string> path, CancellationToken cancellationToken)
+        where T : class
+    {
+        if (!TryNormalizeAsin(asin, out asin))
         {
-            return new(AudnexusError.InvalidAsin, $"'{asin}' isn't an ASIN, those are 10 letters and digits like B09N446YK7");
+            return new(AudnexusError.InvalidAsin, BadAsinMessage(asin));
         }
 
-        region = (region ?? string.Empty).Trim().ToLowerInvariant();
-        if (!Regions.Contains(region))
+        if (!TryNormalizeRegion(region, out region))
         {
-            return new(AudnexusError.InvalidRegion, $"'{region}' isn't an Audible region, use one of {string.Join(", ", Regions)}");
+            return new(AudnexusError.InvalidRegion, BadRegionMessage(region));
         }
 
         var cached = _cache.Read(region, kind, asin);
