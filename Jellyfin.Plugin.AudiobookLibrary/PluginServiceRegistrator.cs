@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using Jellyfin.Plugin.AudiobookLibrary.Audible;
 using Jellyfin.Plugin.AudiobookLibrary.Chapters;
+using Jellyfin.Plugin.AudiobookLibrary.ChapterWriting;
 using Jellyfin.Plugin.AudiobookLibrary.Preferences;
 using Jellyfin.Plugin.AudiobookLibrary.Silences;
 using Jellyfin.Plugin.AudiobookLibrary.Web;
@@ -60,6 +61,17 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             services.GetRequiredService<SilenceCache>(),
             TimeProvider.System,
             services.GetRequiredService<ILogger<SilenceJobs>>()));
+
+        serviceCollection.AddSingleton<IMediaTool, FfmpegMediaTool>();
+        serviceCollection.AddSingleton<IItemRefresher, JellyfinItemRefresher>();
+        serviceCollection.AddSingleton<M4bChapterWriter>();
+
+        // A singleton so one write at a time holds across every request, and shutdown waits for a running swap
+        serviceCollection.AddSingleton(services => new ChapterWriteJobs(
+            services.GetRequiredService<M4bChapterWriter>(),
+            services.GetRequiredService<IItemRefresher>(),
+            TimeProvider.System,
+            services.GetRequiredService<ILogger<ChapterWriteJobs>>()));
     }
 
     // Under Jellyfin's data folder rather than ours, since a plugin update deletes the old version's folder
