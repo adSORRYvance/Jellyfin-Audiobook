@@ -1,11 +1,23 @@
 // Audiobook Library admin page, loaded by jellyfin-web as the config page's controller through data-controller.
 // It lists every audiobook file, previews chapters from Audible or from silences, and applies or restores them.
-// Every title on this page comes from someone's files, so text always goes in through textContent, never as HTML.
+// Jellyfin's own elements (emby-input, emby-select, emby-checkbox) only upgrade when they arrive as HTML,
+// so those parts are HTML strings with every value escaped, and everything else is built with textContent.
+// Book sections copy emby-collapse's look by hand, 12.1 only loads that element inside the library filter dialog.
 
 const PLUGIN_ID = '4cecc660-432f-4714-8958-b5da8537e55d';
-const REGIONS = ['us', 'uk', 'ca', 'au', 'de', 'fr', 'it', 'es', 'in', 'jp'];
 const POLL_MS = 2000;
-const MATCH_TOLERANCE_SEC = 2;
+const REGIONS = [
+    ['us', 'United States (us)'],
+    ['uk', 'United Kingdom (uk)'],
+    ['ca', 'Canada (ca)'],
+    ['au', 'Australia (au)'],
+    ['de', 'Germany (de)'],
+    ['fr', 'France (fr)'],
+    ['it', 'Italy (it)'],
+    ['es', 'Spain (es)'],
+    ['in', 'India (in)'],
+    ['jp', 'Japan (jp)']
+];
 
 // Helpers
 
@@ -29,13 +41,39 @@ function el(tag, props, ...children) {
         }
     }
 
-    for (const child of children.flat()) {
+    // Rows come back as lists of lists, and append turns anything that isn't a node into text
+    for (const child of children.flat(Infinity)) {
         if (child != null && child !== false) {
             node.append(child);
         }
     }
 
     return node;
+}
+
+// Titles and file names come from people's files, so anything going into an HTML string goes through here
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function show(node, visible) {
+    node?.classList.toggle('hide', !visible);
+}
+
+function setButton(button, text, disabled) {
+    button.querySelector('span').textContent = text;
+    button.disabled = !!disabled;
+}
+
+// emby-input moves its label out of the way on change, setting the value alone leaves the label over it
+function setInput(input, value) {
+    input.value = value ?? '';
+    input.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
 }
 
 function formatTime(seconds) {
@@ -103,6 +141,97 @@ async function call(method, path, body) {
     return text ? JSON.parse(text) : null;
 }
 
+const STATUS_LABELS = {
+    NoChapters: 'No chapters',
+    Embedded: 'Embedded',
+    Audible: 'Audible',
+    Silence: 'Silence',
+    NeedsReview: 'Needs review',
+    NotSupported: 'MP3, later'
+};
+
+function pill(status) {
+    return el('span', { class: `abl-pill abl-pill-${status}`, text: STATUS_LABELS[status] || status });
+}
+
+// A book's pill is its most urgent file's, so a half-done split book doesn't look finished
+function bookStatus(book) {
+    const order = ['NeedsReview', 'NoChapters', 'Silence', 'Audible', 'Embedded', 'NotSupported'];
+    return order.find((s) => book.Files.some((f) => f.Status === s)) || 'NotSupported';
+}
+
+// The open file's panel, as HTML so Jellyfin upgrades its inputs, built once and then only updated
+function panelHtml(file, config) {
+    const region = file.Region || config?.AudibleRegion || 'us';
+    const regions = REGIONS
+        .map(([code, label]) => `<option value="${code}"${code === region ? ' selected' : ''}>${label}</option>`)
+        .join('');
+
+    const audible = `
+        <h3 class="abl-file-name"></h3>
+        <div class="abl-file-meta abl-muted"></div>
+        <div class="abl-section">
+            <h4>Audible</h4>
+            <div class="abl-row">
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" class="abl-asin" label="ASIN" maxlength="10" autocomplete="off" value="${escapeHtml(file.Asin || '')}">
+                    <div class="fieldDescription">10 letters and digits, from the book's Audible page address. Save it empty to clear it.</div>
+                </div>
+                <div class="selectContainer">
+                    <select is="emby-select" class="abl-region" label="Store">${regions}</select>
+                </div>
+            </div>
+            <div class="abl-actions">
+                <button is="emby-button" type="button" class="raised emby-button abl-fetch"><span>${file.CanWrite ? 'Save and fetch chapters' : 'Save ASIN'}</span></button>
+            </div>
+            <div class="abl-error abl-error-audible hide"></div>
+        </div>`;
+
+    if (!file.CanWrite) {
+        return audible + `
+        <p class="abl-section abl-muted">Chapters can only be written into M4B and M4A files for now. MP3 books get chapter tools in a later release.</p>`;
+    }
+
+    return audible + `
+        <div class="abl-section">
+            <h4>Silences</h4>
+            <div class="abl-row">
+                <div class="inputContainer">
+                    <input is="emby-input" type="number" class="abl-noise" label="Quieter than (dB)" min="-80" max="-10" step="1" value="${escapeHtml(config?.SilenceNoiseDb ?? -30)}">
+                    <div class="fieldDescription">A new value needs a new scan.</div>
+                </div>
+                <div class="inputContainer">
+                    <input is="emby-input" type="number" class="abl-min" label="At least (seconds)" min="1" max="30" step="0.5" value="${escapeHtml(config?.SilenceMinSeconds ?? 3)}">
+                    <div class="fieldDescription">Changes the preview straight away, without scanning again.</div>
+                </div>
+            </div>
+            <div class="abl-actions">
+                <button is="emby-button" type="button" class="raised emby-button abl-scan"><span>Detect silences</span></button>
+                <button is="emby-button" type="button" class="raised emby-button abl-stop hide"><span>Stop</span></button>
+                <button is="emby-button" type="button" class="raised emby-button abl-show-silence hide"><span>Show these chapters</span></button>
+                <span class="abl-silence-status abl-muted"></span>
+            </div>
+            <div class="abl-error abl-error-silence hide"></div>
+        </div>
+        <div class="abl-section abl-preview"></div>
+        <div class="abl-section">
+            <div class="abl-mismatch abl-warning hide">
+                <div class="abl-mismatch-text"></div>
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" class="abl-use-anyway">
+                    <span>Use these chapters anyway</span>
+                </label>
+            </div>
+            <div class="abl-actions">
+                <button is="emby-button" type="button" class="raised button-submit emby-button abl-apply" disabled><span>Apply</span></button>
+                <button is="emby-button" type="button" class="raised emby-button abl-restore hide"><span>Restore original</span></button>
+                <span class="abl-apply-status abl-muted"></span>
+            </div>
+            <div class="abl-error abl-error-apply hide"></div>
+            <div class="abl-backup-note abl-muted hide">The original is kept next to the file as .bak until you delete it.</div>
+        </div>`;
+}
+
 export default function (view) {
     const state = {
         books: [],
@@ -116,16 +245,15 @@ export default function (view) {
     const listStatus = view.querySelector('.abl-list-status');
     const booksRoot = view.querySelector('.abl-books');
     const expanded = new Set();
+    const sections = new Map();
 
     // Settings
 
     async function loadSettings() {
         state.config = await ApiClient.getPluginConfiguration(PLUGIN_ID);
-        const region = view.querySelector('.abl-setting-region');
-        region.replaceChildren(...REGIONS.map((r) => el('option', { value: r, text: r })));
-        region.value = state.config.AudibleRegion || 'us';
-        view.querySelector('.abl-setting-noise').value = state.config.SilenceNoiseDb;
-        view.querySelector('.abl-setting-min').value = state.config.SilenceMinSeconds;
+        view.querySelector('.abl-setting-region').value = state.config.AudibleRegion || 'us';
+        setInput(view.querySelector('.abl-setting-noise'), state.config.SilenceNoiseDb);
+        setInput(view.querySelector('.abl-setting-min'), state.config.SilenceMinSeconds);
     }
 
     view.querySelector('.abl-settings').addEventListener('submit', async (e) => {
@@ -133,8 +261,8 @@ export default function (view) {
         Dashboard.showLoadingMsg();
         const config = await ApiClient.getPluginConfiguration(PLUGIN_ID);
         config.AudibleRegion = view.querySelector('.abl-setting-region').value;
-        config.SilenceNoiseDb = Number(view.querySelector('.abl-setting-noise').value) || -30;
-        config.SilenceMinSeconds = Number(view.querySelector('.abl-setting-min').value) || 3;
+        config.SilenceNoiseDb = Number(view.querySelector('.abl-setting-noise').value);
+        config.SilenceMinSeconds = Number(view.querySelector('.abl-setting-min').value);
         const result = await ApiClient.updatePluginConfiguration(PLUGIN_ID, config);
         state.config = config;
         Dashboard.processPluginConfigurationUpdateResult(result);
@@ -161,49 +289,62 @@ export default function (view) {
         return state.filter === 'all' || book.Files.some((f) => f.Status === state.filter);
     }
 
-    // A book's pill is its most urgent file's, so a half-done split book doesn't look finished
-    function bookStatus(book) {
-        const order = ['NeedsReview', 'NoChapters', 'Silence', 'Audible', 'Embedded', 'NotSupported'];
-        return order.find((s) => book.Files.some((f) => f.Status === s)) || 'NotSupported';
-    }
-
-    function pill(status) {
-        const labels = {
-            NoChapters: 'No chapters',
-            Embedded: 'Embedded',
-            Audible: 'Audible',
-            Silence: 'Silence',
-            NeedsReview: 'Needs review',
-            NotSupported: 'MP3, later'
-        };
-        return el('span', { class: `abl-pill abl-pill-${status}`, text: labels[status] || status });
-    }
-
+    // Only for loading, searching and filtering, a file change redraws just its own book
     function renderBooks() {
         const shown = state.books.filter(matches);
         listStatus.textContent = `${shown.length} of ${state.books.length} books`;
-        booksRoot.replaceChildren(...shown.map(renderBook));
+
+        sections.clear();
+        booksRoot.replaceChildren(...shown.map(renderSection));
     }
 
-    function renderBook(book) {
+    // The same parts as emby-collapse, a full-width heading button with an expand_more arrow that turns when open
+    // The arrow sits in front of the title rather than at the end like emby-collapse's
+    function renderSection(book) {
         const isOpen = expanded.has(book.FolderId) || book.Files.some((f) => f.ItemId === state.open?.file.ItemId);
-        const files = book.Files.length === 1 ? '1 file' : `${book.Files.length} files`;
-        const head = el('div', { class: 'abl-book-head', onclick: () => {
-            if (expanded.has(book.FolderId)) {
-                expanded.delete(book.FolderId);
-            } else {
+        const status = el('span');
+        const files = el('span', { class: 'abl-muted' });
+        const body = el('div', { class: 'abl-book-body' });
+        const content = el('div', { class: 'abl-book-content', inert: !isOpen }, body);
+        const head = el('button', { type: 'button', class: 'abl-book-head', 'aria-expanded': String(isOpen) },
+            el('span', { class: 'material-icons expand_more abl-expand', 'aria-hidden': 'true' }),
+            el('span', { class: 'abl-book-title' },
+                el('h3', { text: book.Title }),
+                book.Author ? el('span', { class: 'abl-muted', text: book.Author }) : null),
+            status,
+            files);
+        const section = el('div', { class: isOpen ? 'abl-book abl-open' : 'abl-book' }, head, content);
+
+        head.addEventListener('click', () => {
+            const opening = !section.classList.contains('abl-open');
+            section.classList.toggle('abl-open', opening);
+            head.setAttribute('aria-expanded', String(opening));
+
+            // A closed book's buttons and inputs are still there, inert keeps them out of the tab order
+            content.inert = !opening;
+            if (opening) {
                 expanded.add(book.FolderId);
+            } else {
+                expanded.delete(book.FolderId);
             }
+        });
 
-            renderBooks();
-        } },
-        el('span', { text: isOpen ? 'v' : '>' }),
-        el('span', { class: 'abl-name' }, el('strong', { text: book.Title }), book.Author ? el('span', { class: 'abl-muted', text: ` - ${book.Author}` }) : null),
-        el('span', { class: 'abl-muted', text: files }),
-        pill(bookStatus(book)));
+        sections.set(book.FolderId, { body, status, files });
+        renderBookBody(book);
+        return section;
+    }
 
-        const rows = isOpen ? book.Files.map((file) => renderFile(book, file)) : [];
-        return el('div', { class: 'abl-book' }, head, rows);
+    function renderBookBody(book) {
+        const section = sections.get(book.FolderId);
+        if (!section) {
+            return;
+        }
+
+        section.status.replaceChildren(pill(bookStatus(book)));
+        section.files.textContent = book.Files.length === 1 ? '1 file' : `${book.Files.length} files`;
+
+        // replaceChildren takes nodes one by one, a list passed whole would be printed as text
+        section.body.replaceChildren(...book.Files.flatMap((file) => renderFile(book, file)));
     }
 
     function renderFile(book, file) {
@@ -213,13 +354,8 @@ export default function (view) {
             el('span', { class: 'abl-muted', text: `${formatLength(file.DurationSec)}  ${file.ChapterCount} ch` }),
             file.Asin ? el('span', { class: 'abl-muted', text: file.Asin }) : null,
             pill(file.Status),
-            el('button', { type: 'button', class: 'raised emby-button', text: isOpen ? 'Close' : 'Open', onclick: () => {
-                if (isOpen) {
-                    closeFile();
-                } else {
-                    openFile(book, file);
-                }
-            } }));
+            el('button', { type: 'button', class: 'raised emby-button', onclick: () => (isOpen ? closeFile() : openFile(book, file)) },
+                el('span', { text: isOpen ? 'Close' : 'Open' })));
 
         return isOpen ? [row, state.open.panel] : [row];
     }
@@ -227,35 +363,64 @@ export default function (view) {
     // One open file
 
     function closeFile() {
+        const book = state.open?.book;
         stopPolling();
         state.open = null;
-        renderBooks();
+        if (book) {
+            renderBookBody(book);
+        }
     }
 
     function openFile(book, file) {
+        const previous = state.open?.book;
         stopPolling();
-        const open = {
+        state.open = {
             book,
             file,
-            panel: el('div', { class: 'abl-detail' }),
+            panel: buildPanel(file),
             preview: null,
             silence: null,
             apply: null,
             useAnyway: false,
             errors: {}
         };
-        state.open = open;
-        renderPanel();
-        renderBooks();
+
+        if (previous && previous !== book) {
+            renderBookBody(previous);
+        }
+
+        renderBookBody(book);
+        update();
 
         // An earlier scan or a write still running shows up straight away
         refreshSilence();
         refreshApply();
     }
 
+    function buildPanel(file) {
+        const panel = el('div', { class: 'abl-detail' });
+        panel.innerHTML = panelHtml(file, state.config);
+
+        const on = (selector, event, handler) => panel.querySelector(selector)?.addEventListener(event, handler);
+        on('.abl-fetch', 'click', fetchAudible);
+        on('.abl-scan', 'click', startSilence);
+        on('.abl-stop', 'click', stopSilence);
+        on('.abl-show-silence', 'click', showSilencePreview);
+        on('.abl-noise', 'change', refreshSilence);
+        on('.abl-min', 'change', refreshSilence);
+        on('.abl-apply', 'click', apply);
+        on('.abl-restore', 'click', restore);
+        on('.abl-use-anyway', 'change', (e) => {
+            state.open.useAnyway = e.target.checked;
+            update();
+        });
+
+        return panel;
+    }
+
     function setError(where, message) {
         state.open.errors[where] = message;
-        renderPanel();
+        update();
     }
 
     function noiseValue() {
@@ -266,42 +431,49 @@ export default function (view) {
         return Number(state.open.panel.querySelector('.abl-min')?.value) || state.config?.SilenceMinSeconds || 3;
     }
 
-    async function refreshFile() {
+    function replaceFile(file) {
         const open = state.open;
-        if (!open) {
-            return;
-        }
-
-        const file = await call('GET', `Files/${open.file.ItemId}`);
         const index = open.book.Files.findIndex((f) => f.ItemId === file.ItemId);
         open.book.Files[index] = file;
         open.file = file;
-        renderPanel();
-        renderBooks();
+        renderBookBody(open.book);
+        update();
+    }
+
+    async function refreshFile() {
+        const open = state.open;
+        if (open) {
+            const file = await call('GET', `Files/${open.file.ItemId}`);
+            if (state.open === open) {
+                replaceFile(file);
+            }
+        }
     }
 
     // Audible
 
     async function fetchAudible() {
         const open = state.open;
-        const asin = open.panel.querySelector('.abl-asin').value;
-        const region = open.panel.querySelector('.abl-region').value;
         open.errors.audible = null;
         try {
-            open.file = await call('PUT', `Files/${open.file.ItemId}/Asin`, { Asin: asin, Region: region });
-            const index = open.book.Files.findIndex((f) => f.ItemId === open.file.ItemId);
-            open.book.Files[index] = open.file;
+            replaceFile(await call('PUT', `Files/${open.file.ItemId}/Asin`, {
+                Asin: open.panel.querySelector('.abl-asin').value,
+                Region: open.panel.querySelector('.abl-region').value
+            }));
+
             if (!open.file.Asin) {
                 setError('audible', 'ASIN cleared');
-                renderBooks();
+                return;
+            }
+
+            if (!open.file.CanWrite) {
                 return;
             }
 
             const match = await call('GET', `Files/${open.file.ItemId}/Audible`);
             open.useAnyway = false;
             open.preview = { source: 'Audible', chapters: match.Chapters, removed: new Set(), match };
-            renderPanel();
-            renderBooks();
+            update();
         } catch (err) {
             setError('audible', err.message);
         }
@@ -314,7 +486,7 @@ export default function (view) {
         open.errors.silence = null;
         try {
             open.silence = await call('POST', `Files/${open.file.ItemId}/Silences?noise=${noiseValue()}`);
-            renderPanel();
+            update();
             startPolling();
         } catch (err) {
             setError('silence', err.message);
@@ -345,13 +517,14 @@ export default function (view) {
 
             const finishedNow = silence.State === 'Done' && open.silence?.State !== 'Done';
             open.silence = silence;
+            open.errors.silence = null;
 
-            // A scan that just finished, or one found on opening, becomes the preview unless Audible's is showing
+            // A scan that just finished, or a new minimum, becomes the preview unless Audible's is showing
             if (silence.State === 'Done' && (finishedNow || open.preview?.source === 'Silence') && open.preview?.source !== 'Audible') {
                 open.preview = { source: 'Silence', chapters: silence.Chapters, removed: new Set() };
             }
 
-            renderPanel();
+            update();
             if (silence.State === 'Queued' || silence.State === 'Running') {
                 startPolling();
             }
@@ -364,7 +537,7 @@ export default function (view) {
         const open = state.open;
         if (open.silence?.State === 'Done') {
             open.preview = { source: 'Silence', chapters: open.silence.Chapters, removed: new Set() };
-            renderPanel();
+            update();
         }
     }
 
@@ -383,7 +556,7 @@ export default function (view) {
                 Chapters: chaptersToWrite(),
                 Source: open.preview.source
             });
-            renderPanel();
+            update();
             startPolling();
         } catch (err) {
             setError('apply', err.message);
@@ -404,7 +577,7 @@ export default function (view) {
             }
 
             open.apply = status;
-            renderPanel();
+            update();
             if (status.State === 'Queued' || status.State === 'Running') {
                 startPolling();
             } else if (status.State === 'Done' && before && before !== 'Done') {
@@ -439,13 +612,8 @@ export default function (view) {
 
         state.timer = setInterval(async () => {
             const open = state.open;
-            if (!open) {
-                stopPolling();
-                return;
-            }
-
-            const silenceBusy = open.silence?.State === 'Queued' || open.silence?.State === 'Running';
-            const applyBusy = open.apply?.State === 'Queued' || open.apply?.State === 'Running';
+            const silenceBusy = open?.silence?.State === 'Queued' || open?.silence?.State === 'Running';
+            const applyBusy = open?.apply?.State === 'Queued' || open?.apply?.State === 'Running';
             if (!silenceBusy && !applyBusy) {
                 stopPolling();
                 return;
@@ -466,130 +634,102 @@ export default function (view) {
         state.timer = null;
     }
 
-    // Panel
+    // Panel updates, text and visibility only, so nothing being typed in gets rebuilt
 
-    function errorLine(where) {
-        const message = state.open.errors[where];
-        return message ? el('div', { class: 'abl-error', text: message }) : null;
+    function showError(where) {
+        const node = state.open.panel.querySelector(`.abl-error-${where}`);
+        if (node) {
+            node.textContent = state.open.errors[where] || '';
+            show(node, !!state.open.errors[where]);
+        }
     }
 
-    function renderPanel() {
+    function update() {
         const open = state.open;
         if (!open) {
             return;
         }
 
-        // Keep what was typed, the panel is rebuilt on every status change
-        const typed = {
-            asin: open.panel.querySelector('.abl-asin')?.value,
-            region: open.panel.querySelector('.abl-region')?.value,
-            noise: open.panel.querySelector('.abl-noise')?.value,
-            min: open.panel.querySelector('.abl-min')?.value
-        };
-        const file = open.file;
-
-        const header = el('div', {},
-            el('h3', { text: file.FileName }),
-            el('div', { class: 'abl-muted', text: `${formatTime(file.DurationSec)}  Now: ${file.ChapterCount} chapters` }, ' ', pill(file.Status)));
-
-        const audible = el('div', { class: 'abl-section' },
-            el('strong', { text: 'Audible' }),
-            el('div', { class: 'abl-row' },
-                el('label', {}, 'ASIN', el('input', { class: 'abl-asin', value: typed.asin ?? file.Asin ?? '', placeholder: 'B0XXXXXXXX' })),
-                el('label', {}, 'Store', el('select', { class: 'abl-region' },
-                    REGIONS.map((r) => el('option', { value: r, text: r, selected: r === (typed.region ?? file.Region ?? state.config?.AudibleRegion ?? 'us') })))),
-                el('button', { type: 'button', class: 'raised emby-button', text: file.CanWrite ? 'Save and fetch chapters' : 'Save ASIN', onclick: fetchAudible })),
-            errorLine('audible'));
-
+        const { panel, file } = open;
+        panel.querySelector('.abl-file-name').textContent = file.FileName;
+        panel.querySelector('.abl-file-meta').replaceChildren(`${formatTime(file.DurationSec)}  Now: ${file.ChapterCount} chapters  `, pill(file.Status));
+        showError('audible');
         if (!file.CanWrite) {
-            open.panel.replaceChildren(header, audible,
-                el('p', { class: 'abl-muted', text: 'Chapters can only be written into M4B and M4A files for now. MP3 books get chapter tools in a later release.' }));
             return;
         }
 
-        const silence = open.silence;
-        const busy = silence?.State === 'Queued' || silence?.State === 'Running';
-        let silenceText = '';
-        if (silence?.State === 'Running') {
-            silenceText = `Scanning ${Math.round(silence.Percent)}%`;
-        } else if (silence?.State === 'Queued') {
-            silenceText = 'Waiting for another scan to finish';
-        } else if (silence?.State === 'Done') {
-            silenceText = `${silence.Chapters.length} chapters at these settings`;
-        } else if (silence?.State === 'Cancelled') {
-            silenceText = 'Stopped';
-        }
-
-        const silences = el('div', { class: 'abl-section' },
-            el('strong', { text: 'Silences' }),
-            el('div', { class: 'abl-row' },
-                el('label', {}, 'Quieter than (dB)', el('input', { class: 'abl-noise abl-narrow', type: 'number', min: '-80', max: '-10', step: '1', value: typed.noise ?? state.config?.SilenceNoiseDb ?? -30 })),
-                el('label', {}, 'At least (s)', el('input', { class: 'abl-min abl-narrow', type: 'number', min: '1', max: '30', step: '0.5', value: typed.min ?? state.config?.SilenceMinSeconds ?? 3, onchange: refreshSilence })),
-                busy
-                    ? el('button', { type: 'button', class: 'raised emby-button', text: 'Stop', onclick: stopSilence })
-                    : el('button', { type: 'button', class: 'raised emby-button', text: silence?.State === 'Done' ? 'Scan again' : 'Detect silences', onclick: startSilence }),
-                silence?.State === 'Done' && open.preview?.source !== 'Silence'
-                    ? el('button', { type: 'button', class: 'raised emby-button', text: 'Show these chapters', onclick: showSilencePreview })
-                    : null,
-                el('span', { class: 'abl-muted', text: silenceText })),
-            silence?.State === 'Failed' ? el('div', { class: 'abl-error', text: silence.Error }) : null,
-            errorLine('silence'));
-
-        open.panel.replaceChildren(header, audible, silences, renderPreview(), renderApply());
+        updateSilence();
+        updatePreview();
+        updateApply();
     }
 
-    function renderPreview() {
+    function updateSilence() {
+        const { panel, silence } = state.open;
+        const busy = silence?.State === 'Queued' || silence?.State === 'Running';
+        const texts = {
+            None: 'Not scanned at this loudness yet',
+            Queued: 'Waiting for another scan to finish',
+            Running: `Scanning ${Math.round(silence?.Percent || 0)}%`,
+            Done: `${silence?.Chapters?.length ?? 0} chapters at these settings`,
+            Cancelled: 'Stopped',
+            Failed: silence?.Error
+        };
+
+        const scan = panel.querySelector('.abl-scan');
+        setButton(scan, silence?.State === 'Done' ? 'Scan again' : 'Detect silences');
+        show(scan, !busy);
+        show(panel.querySelector('.abl-stop'), busy);
+        show(panel.querySelector('.abl-show-silence'), silence?.State === 'Done' && state.open.preview?.source !== 'Silence');
+        panel.querySelector('.abl-silence-status').textContent = silence ? texts[silence.State] || '' : '';
+        showError('silence');
+    }
+
+    function updatePreview() {
         const open = state.open;
         const preview = open.preview;
+        const root = open.panel.querySelector('.abl-preview');
         if (!preview) {
-            return el('div', { class: 'abl-section abl-muted', text: 'Fetch Audible chapters or detect silences to preview chapters here.' });
+            root.replaceChildren(el('p', { class: 'abl-muted', text: 'Fetch Audible chapters or detect silences to preview chapters here.' }));
+            return;
         }
 
-        const kept = preview.chapters.length - preview.removed.size;
         const match = preview.match;
-        const items = preview.chapters.map((chapter, i) => {
-            if (preview.removed.has(i)) {
-                return null;
-            }
-
-            return el('li', {},
-                el('span', { class: 'abl-time', text: formatTime(chapter.StartSec) }),
-                el('span', { class: 'abl-title', text: chapter.Title }),
-                i === 0
-                    ? el('span', { class: 'abl-muted', text: 'first, stays' })
-                    : el('button', { type: 'button', class: 'abl-x', title: 'Remove this mark', text: 'x', onclick: () => {
-                        preview.removed.add(i);
-                        renderPanel();
-                    } }));
-        });
-
-        let warning = null;
-        if (match && !match.Matches) {
-            const apart = Math.abs(match.DifferenceSec).toFixed(1);
-            warning = el('div', { class: 'abl-warning' },
-                el('div', { text: `Audible's book is ${formatTime(match.AudibleSec)} and this file is ${formatTime(match.FileSec)}, ${apart} s apart. It may be another edition or the wrong ASIN, and every chapter could be off by that much.` }),
-                el('label', {}, el('input', { type: 'checkbox', checked: open.useAnyway, onchange: (e) => {
-                    open.useAnyway = e.target.checked;
-                    renderPanel();
-                } }), ' Use anyway'));
-        }
-
+        const kept = preview.chapters.length - preview.removed.size;
         const source = preview.source === 'Audible'
             ? `Audible${match.Title ? `: ${match.Title}` : ''} (${match.Asin}, ${match.Region})`
             : 'Silences';
-        return el('div', { class: 'abl-section' },
-            el('strong', { text: `Preview from ${source}, ${kept} chapters` }),
+
+        const items = preview.chapters.map((chapter, i) => (preview.removed.has(i) ? null : el('li', {},
+            el('span', { class: 'abl-time', text: formatTime(chapter.StartSec) }),
+            el('span', { class: 'abl-title', text: chapter.Title }),
+            i === 0
+                ? el('span', { class: 'abl-muted', text: 'first, stays' })
+                : el('button', {
+                    type: 'button',
+                    class: 'paper-icon-button-light',
+                    title: 'Remove this mark',
+                    'aria-label': 'Remove this mark',
+                    onclick: () => {
+                        preview.removed.add(i);
+                        update();
+                    }
+                }, el('span', { class: 'material-icons close', 'aria-hidden': 'true' })))));
+
+        // replaceChildren prints a null as the word null, so the lines that don't apply are dropped first
+        root.replaceChildren(...[
+            el('h4', { text: `Preview from ${source}, ${kept} chapters` }),
             match?.IsOld ? el('div', { class: 'abl-muted', text: 'Audnexus is unreachable, this is an older saved copy.' }) : null,
             match?.DroppedPastEnd ? el('div', { class: 'abl-muted', text: `${match.DroppedPastEnd} Audible chapters start after this file ends and are left out.` }) : null,
-            warning,
-            el('ol', { class: 'abl-chapters' }, items));
+            el('ol', { class: 'abl-chapters' }, items)
+        ].filter(Boolean));
     }
 
-    function renderApply() {
+    function updateApply() {
         const open = state.open;
-        const status = open.apply;
+        const { panel, preview, apply: status } = open;
+        const match = preview?.match;
+        const mismatch = !!match && !match.Matches;
         const running = status?.State === 'Queued' || status?.State === 'Running';
-        const blocked = !open.preview || running || (open.preview.match && !open.preview.match.Matches && !open.useAnyway);
         const stages = {
             Preparing: 'Checking the folder and reading the file',
             Writing: 'Writing a copy with the new chapters',
@@ -598,25 +738,36 @@ export default function (view) {
             Refreshing: 'Asking Jellyfin to re-read the file'
         };
 
-        let line = null;
-        if (status?.State === 'Queued') {
-            line = el('span', { class: 'abl-muted', text: 'Waiting for another write to finish' });
-        } else if (status?.State === 'Running') {
-            line = el('span', { class: 'abl-muted', text: `${stages[status.Stage] || status.Stage}...` });
-        } else if (status?.State === 'Done') {
-            line = el('span', { class: 'abl-muted', text: 'Done. Jellyfin is re-reading the file, the chapter count updates in a few seconds.' });
+        show(panel.querySelector('.abl-mismatch'), mismatch);
+        if (mismatch) {
+            const apart = Math.abs(match.DifferenceSec).toFixed(1);
+            panel.querySelector('.abl-mismatch-text').textContent = `Audible's book is ${formatTime(match.AudibleSec)} and this file is ${formatTime(match.FileSec)}, ${apart} s apart. It may be another edition or the wrong ASIN, and every chapter could be off by that much.`;
+            panel.querySelector('.abl-use-anyway').checked = open.useAnyway;
         }
 
+        const count = preview ? preview.chapters.length - preview.removed.size : 0;
+        const blocked = !preview || running || (mismatch && !open.useAnyway);
+        setButton(panel.querySelector('.abl-apply'), preview ? `Apply ${count} chapters` : 'Apply', blocked);
+
         const hasBackup = status?.HasBackup ?? open.file.HasBackup;
-        const count = open.preview ? open.preview.chapters.length - open.preview.removed.size : 0;
-        return el('div', { class: 'abl-section' },
-            el('div', { class: 'abl-row' },
-                el('button', { type: 'button', class: 'raised button-submit emby-button', disabled: blocked, text: `Apply ${count} chapters`, onclick: apply }),
-                hasBackup && !running ? el('button', { type: 'button', class: 'raised emby-button', text: 'Restore original', onclick: restore }) : null,
-                line),
-            status?.State === 'Failed' ? el('div', { class: 'abl-error', text: status.Error }) : null,
-            errorLine('apply'),
-            hasBackup ? el('div', { class: 'abl-muted', text: 'The original is kept next to the file as .bak until you delete it.' }) : null);
+        show(panel.querySelector('.abl-restore'), hasBackup && !running);
+        show(panel.querySelector('.abl-backup-note'), hasBackup);
+
+        let line = '';
+        if (status?.State === 'Queued') {
+            line = 'Waiting for another write to finish';
+        } else if (status?.State === 'Running') {
+            line = `${stages[status.Stage] || status.Stage}...`;
+        } else if (status?.State === 'Done') {
+            line = 'Done. Jellyfin is re-reading the file, the chapter count updates in a few seconds.';
+        }
+
+        panel.querySelector('.abl-apply-status').textContent = line;
+        if (status?.State === 'Failed') {
+            open.errors.apply = status.Error;
+        }
+
+        showError('apply');
     }
 
     // Page events

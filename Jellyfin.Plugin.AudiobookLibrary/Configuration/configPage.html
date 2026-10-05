@@ -5,18 +5,25 @@
     <title>Audiobook Library</title>
 </head>
 <body>
-    <div id="AudiobookLibraryConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input,emby-select,emby-checkbox" data-controller="__plugin/AudiobookLibraryAdmin.js">
+    <div id="AudiobookLibraryConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-controller="__plugin/AudiobookLibraryAdmin.js">
         <style>
-            #AudiobookLibraryConfigPage .abl-row { display: flex; flex-wrap: wrap; gap: 0.75em; align-items: flex-end; margin: 0.5em 0; }
-            #AudiobookLibraryConfigPage .abl-row label { display: flex; flex-direction: column; gap: 0.25em; font-size: 0.9em; }
-            #AudiobookLibraryConfigPage input, #AudiobookLibraryConfigPage select { padding: 0.4em 0.5em; font: inherit; }
-            #AudiobookLibraryConfigPage .abl-narrow { width: 6em; }
-            #AudiobookLibraryConfigPage .abl-asin { width: 9em; font-family: monospace; }
-            #AudiobookLibraryConfigPage .abl-book { border-top: 1px solid rgba(128, 128, 128, 0.3); padding: 0.4em 0; }
-            #AudiobookLibraryConfigPage .abl-book-head { display: flex; gap: 0.75em; align-items: center; cursor: pointer; }
-            #AudiobookLibraryConfigPage .abl-book-head .abl-name { flex: 1; min-width: 0; }
+            #AudiobookLibraryConfigPage .abl-row { display: flex; flex-wrap: wrap; gap: 0 1em; align-items: flex-start; }
+            #AudiobookLibraryConfigPage .abl-row > .inputContainer, #AudiobookLibraryConfigPage .abl-row > .selectContainer { flex: 1; min-width: 10em; }
             #AudiobookLibraryConfigPage .abl-muted { opacity: 0.7; font-size: 0.9em; }
-            #AudiobookLibraryConfigPage .abl-file { display: flex; gap: 0.75em; align-items: center; padding: 0.3em 0 0.3em 1.5em; flex-wrap: wrap; }
+            /* Book sections work like Jellyfin's emby-collapse, which 12.1 only loads inside the library filter dialog */
+            #AudiobookLibraryConfigPage .abl-book-head { display: flex; gap: 0.75em; align-items: center; width: 100%; margin: 0; padding: 0.6em 0.25em; border: 0; border-bottom: 0.1em solid rgba(128, 128, 128, 0.3); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+            #AudiobookLibraryConfigPage .abl-book-head:focus-visible { outline: 2px solid currentColor; }
+            #AudiobookLibraryConfigPage .abl-book-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+            #AudiobookLibraryConfigPage .abl-book-title h3 { display: inline; margin: 0 0.5em 0 0; font-size: 1.1em; }
+            #AudiobookLibraryConfigPage .abl-expand { transition: transform 180ms ease-out; }
+            #AudiobookLibraryConfigPage .abl-open > .abl-book-head .abl-expand { transform: rotate(180deg); }
+            /* Animating the grid row from 0fr to 1fr slides the content open without measuring its height */
+            #AudiobookLibraryConfigPage .abl-book-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 300ms; }
+            #AudiobookLibraryConfigPage .abl-open > .abl-book-content { grid-template-rows: 1fr; }
+            /* Indented by the arrow's width plus the gap, so file rows line up under the book title */
+            #AudiobookLibraryConfigPage .abl-book-body { overflow: hidden; min-height: 0; padding: 0 0.25em 0 calc(0.25em + 24px + 0.75em); }
+            #AudiobookLibraryConfigPage .abl-open .abl-book-body { padding-bottom: 0.75em; }
+            #AudiobookLibraryConfigPage .abl-file { display: flex; gap: 0.75em; align-items: center; padding: 0.3em 0; flex-wrap: wrap; }
             #AudiobookLibraryConfigPage .abl-file .abl-name { flex: 1; min-width: 12em; overflow-wrap: anywhere; }
             #AudiobookLibraryConfigPage .abl-pill { border-radius: 1em; padding: 0.1em 0.7em; font-size: 0.85em; white-space: nowrap; border: 1px solid currentColor; }
             #AudiobookLibraryConfigPage .abl-pill-NoChapters { color: #e0a030; }
@@ -24,41 +31,65 @@
             #AudiobookLibraryConfigPage .abl-pill-Audible, #AudiobookLibraryConfigPage .abl-pill-Silence { color: #40b070; }
             #AudiobookLibraryConfigPage .abl-pill-Embedded { color: #60a0e0; }
             #AudiobookLibraryConfigPage .abl-pill-NotSupported { opacity: 0.6; }
-            #AudiobookLibraryConfigPage .abl-detail { margin: 0.5em 0 1em 1.5em; padding: 1em; border-radius: 0.5em; background: rgba(128, 128, 128, 0.12); }
-            #AudiobookLibraryConfigPage .abl-detail h3 { margin: 0 0 0.25em; }
-            #AudiobookLibraryConfigPage .abl-section { margin-top: 1em; }
-            #AudiobookLibraryConfigPage .abl-error { color: #e05050; margin: 0.3em 0; }
-            #AudiobookLibraryConfigPage .abl-warning { color: #e0a030; margin: 0.3em 0; }
+            #AudiobookLibraryConfigPage .abl-detail { margin: 0.5em 0 1em; padding: 1em; border-radius: 0.5em; background: rgba(128, 128, 128, 0.12); }
+            #AudiobookLibraryConfigPage .abl-detail h3 { margin: 0 0 0.25em; overflow-wrap: anywhere; }
+            #AudiobookLibraryConfigPage .abl-section { margin-top: 1.5em; }
+            #AudiobookLibraryConfigPage .abl-section > h4 { margin: 0 0 0.5em; }
+            #AudiobookLibraryConfigPage .abl-actions { display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; }
+            #AudiobookLibraryConfigPage .abl-actions .emby-button { margin: 0; }
+            #AudiobookLibraryConfigPage .abl-error { color: #e05050; margin: 0.5em 0; }
+            #AudiobookLibraryConfigPage .abl-warning { color: #e0a030; margin: 0.5em 0; }
             #AudiobookLibraryConfigPage .abl-chapters { max-height: 24em; overflow-y: auto; margin: 0.5em 0; padding: 0; list-style: none; }
-            #AudiobookLibraryConfigPage .abl-chapters li { display: flex; gap: 0.75em; align-items: center; padding: 0.15em 0; }
+            #AudiobookLibraryConfigPage .abl-chapters li { display: flex; gap: 0.75em; align-items: center; min-height: 2.4em; }
             #AudiobookLibraryConfigPage .abl-chapters .abl-time { font-family: monospace; min-width: 6em; }
-            #AudiobookLibraryConfigPage .abl-chapters .abl-title { flex: 1; }
-            #AudiobookLibraryConfigPage .abl-x { background: none; border: none; color: inherit; cursor: pointer; font-size: 1.1em; padding: 0 0.4em; }
-            #AudiobookLibraryConfigPage .abl-filters button.abl-on { outline: 2px solid currentColor; }
+            #AudiobookLibraryConfigPage .abl-chapters .abl-title { flex: 1; overflow-wrap: anywhere; }
+            #AudiobookLibraryConfigPage .abl-filters { display: flex; flex-wrap: wrap; gap: 0.5em; margin-bottom: 1em; }
+            #AudiobookLibraryConfigPage .abl-filters .emby-button { margin: 0; }
+            #AudiobookLibraryConfigPage .abl-filters .abl-on { outline: 2px solid currentColor; }
         </style>
         <div data-role="content">
             <div class="content-primary">
-                <h2 class="sectionTitle">Audiobook Library</h2>
+                <h1>Audiobook Library</h1>
+
+                <form class="abl-settings">
+                    <h2 class="sectionTitle">Settings</h2>
+                    <div class="selectContainer">
+                        <select is="emby-select" class="abl-setting-region" label="Audible store">
+                            <option value="us">United States (us)</option>
+                            <option value="uk">United Kingdom (uk)</option>
+                            <option value="ca">Canada (ca)</option>
+                            <option value="au">Australia (au)</option>
+                            <option value="de">Germany (de)</option>
+                            <option value="fr">France (fr)</option>
+                            <option value="it">Italy (it)</option>
+                            <option value="es">Spain (es)</option>
+                            <option value="in">India (in)</option>
+                            <option value="jp">Japan (jp)</option>
+                        </select>
+                        <div class="fieldDescription">The store ASINs are looked up in, unless a book says otherwise. The same book has a different ASIN in each store.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" class="abl-setting-noise" label="Silence: quieter than (dB)" required min="-80" max="-10" step="1">
+                        <div class="fieldDescription">Anything quieter counts as silence. -30 suits most books, -40 misses the pauses in recordings with background hiss.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="number" class="abl-setting-min" label="Silence: at least (seconds)" required min="1" max="30" step="0.5">
+                        <div class="fieldDescription">Shorter pauses are ignored. 3 finds chapter breaks without many false ones, lower it for books with short gaps between chapters.</div>
+                    </div>
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Save</span></button>
+                    </div>
+                </form>
 
                 <div class="verticalSection">
-                    <h3 class="sectionTitle">Settings</h3>
-                    <form class="abl-settings abl-row">
-                        <label>Audible store <select class="abl-setting-region"></select></label>
-                        <label>Silence quieter than (dB) <input class="abl-setting-noise abl-narrow" type="number" min="-80" max="-10" step="1"></label>
-                        <label>Silence at least (s) <input class="abl-setting-min abl-narrow" type="number" min="1" max="30" step="0.5"></label>
-                        <button is="emby-button" type="submit" class="raised button-submit emby-button"><span>Save</span></button>
-                    </form>
-                </div>
-
-                <div class="verticalSection">
-                    <h3 class="sectionTitle">Books</h3>
-                    <div class="abl-row">
-                        <input class="abl-search" type="search" placeholder="Search title or author" style="flex: 1; min-width: 14em;">
-                        <div class="abl-filters abl-row" style="margin: 0;">
-                            <button type="button" class="raised emby-button abl-on" data-filter="all">All</button>
-                            <button type="button" class="raised emby-button" data-filter="NoChapters">No chapters</button>
-                            <button type="button" class="raised emby-button" data-filter="NeedsReview">Needs review</button>
-                        </div>
+                    <h2 class="sectionTitle">Books</h2>
+                    <div class="inputContainer">
+                        <input is="emby-input" type="search" class="abl-search" label="Search title or author">
+                    </div>
+                    <div class="abl-filters">
+                        <button is="emby-button" type="button" class="raised emby-button abl-on" data-filter="all"><span>All</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" data-filter="NoChapters"><span>No chapters</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button" data-filter="NeedsReview"><span>Needs review</span></button>
                     </div>
                     <p class="abl-list-status abl-muted">Loading...</p>
                     <div class="abl-books"></div>
