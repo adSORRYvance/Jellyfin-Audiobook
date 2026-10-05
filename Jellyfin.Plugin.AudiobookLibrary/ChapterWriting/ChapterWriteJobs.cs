@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -16,6 +17,7 @@ public sealed partial class ChapterWriteJobs : IDisposable
 {
     private readonly M4bChapterWriter _writer;
     private readonly IItemRefresher _refresher;
+    private readonly IReadOnlyList<IChapterWriteListener> _listeners;
     private readonly TimeProvider _time;
     private readonly ILogger<ChapterWriteJobs> _logger;
 
@@ -29,12 +31,14 @@ public sealed partial class ChapterWriteJobs : IDisposable
     /// </summary>
     /// <param name="writer">Does the writing.</param>
     /// <param name="refresher">Tells Jellyfin a file changed.</param>
+    /// <param name="listeners">Told about every replaced or restored file.</param>
     /// <param name="time">The clock, so tests get fixed times.</param>
     /// <param name="logger">Logger.</param>
-    public ChapterWriteJobs(M4bChapterWriter writer, IItemRefresher refresher, TimeProvider time, ILogger<ChapterWriteJobs> logger)
+    public ChapterWriteJobs(M4bChapterWriter writer, IItemRefresher refresher, IEnumerable<IChapterWriteListener> listeners, TimeProvider time, ILogger<ChapterWriteJobs> logger)
     {
         _writer = writer;
         _refresher = refresher;
+        _listeners = listeners.ToList();
         _time = time;
         _logger = logger;
     }
@@ -59,8 +63,11 @@ public sealed partial class ChapterWriteJobs : IDisposable
             var job = new ChapterWriteJob(target);
             _jobs[target.ItemId] = job;
             existing?.Dispose();
+
+            // Read before starting, the background task can be past Queued by the time Task.Run returns
+            var status = job.Snapshot();
             job.Run = Task.Run(() => RunAsync(job));
-            return job.Snapshot();
+            return status;
         }
     }
 
@@ -89,11 +96,19 @@ public sealed partial class ChapterWriteJobs : IDisposable
 
             try
             {
+                var before = FileStamp.Of(path);
                 _writer.Restore(path);
+                Tell(l => l.FileRestored(itemId, path, before, FileStamp.Of(path)), path);
             }
             catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
             {
                 return ex.Message;
+            }
+
+            // The last write no longer describes the file, so the page shouldn't keep showing it as done
+            if (_jobs.TryRemove(itemId, out var finished))
+            {
+                finished.Dispose();
             }
         }
 
@@ -121,7 +136,13 @@ public sealed partial class ChapterWriteJobs : IDisposable
             await _oneAtATime.WaitAsync(job.Token).ConfigureAwait(false);
             entered = true;
 
+            // A missing file is left for the writer to report, its message is clearer
+            var before = File.Exists(target.Path) ? FileStamp.Of(target.Path) : null;
             await _writer.WriteAsync(target.Path, target.Chapters, job.SetStage, job.Token).ConfigureAwait(false);
+            if (before is not null)
+            {
+                Tell(l => l.FileReplaced(target, before, FileStamp.Of(target.Path)), target.Path);
+            }
 
             job.SetStage(ChapterWriteStage.Refreshing);
             _refresher.Refresh(target.ItemId);
@@ -145,6 +166,25 @@ public sealed partial class ChapterWriteJobs : IDisposable
         }
     }
 
+    // The file is already replaced by now, so a listener failing is logged rather than turning a good write into a failed one
+    private void Tell(Action<IChapterWriteListener> call, string path)
+    {
+        foreach (var listener in _listeners)
+        {
+            try
+            {
+                call(listener);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
+            {
+                LogListenerFailed(ex, path);
+            }
+        }
+    }
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Writing chapters into {Path} failed, the original is untouched")]
     private partial void LogFailed(Exception ex, string path);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not update saved data after {Path} changed")]
+    private partial void LogListenerFailed(Exception ex, string path);
 }

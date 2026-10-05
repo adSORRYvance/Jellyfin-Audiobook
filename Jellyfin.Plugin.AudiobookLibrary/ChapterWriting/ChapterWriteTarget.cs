@@ -9,4 +9,5 @@ namespace Jellyfin.Plugin.AudiobookLibrary.ChapterWriting;
 /// <param name="ItemId">The file's AudioBook item, refreshed afterwards.</param>
 /// <param name="Path">The file on disk.</param>
 /// <param name="Chapters">The chapters to write.</param>
-public sealed record ChapterWriteTarget(Guid ItemId, string Path, IReadOnlyList<ChapterEntry> Chapters);
+/// <param name="Source">Where the chapters came from, Audible or Silence, kept so the admin page can show it.</param>
+public sealed record ChapterWriteTarget(Guid ItemId, string Path, IReadOnlyList<ChapterEntry> Chapters, string? Source = null);

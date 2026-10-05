@@ -46,6 +46,13 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 Name = Name,
                 EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace)
+            },
+
+            // The page's script, which jellyfin-web loads through the page's data-controller
+            new PluginPageInfo
+            {
+                Name = "AudiobookLibraryAdmin.js",
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.admin.js", GetType().Namespace)
             }
         ];
     }

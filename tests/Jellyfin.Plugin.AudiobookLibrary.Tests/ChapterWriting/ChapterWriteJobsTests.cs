@@ -12,6 +12,7 @@ public sealed class ChapterWriteJobsTests : IDisposable
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "abl-writejobs-" + Guid.NewGuid().ToString("N"));
     private readonly FakeMediaTool _tool = new();
     private readonly FakeRefresher _refresher = new();
+    private readonly RecordingListener _listener = new();
     private readonly FakeClock _clock = new();
     private readonly ChapterWriteJobs _jobs;
     private readonly ChapterWriteTarget _target;
@@ -22,7 +23,7 @@ public sealed class ChapterWriteJobsTests : IDisposable
         var path = Path.Combine(_folder, "Book.m4b");
         File.WriteAllText(path, "original audio");
         _target = new ChapterWriteTarget(Guid.NewGuid(), path, Chapters);
-        _jobs = new ChapterWriteJobs(new M4bChapterWriter(_tool, NullLogger<M4bChapterWriter>.Instance), _refresher, _clock, NullLogger<ChapterWriteJobs>.Instance);
+        _jobs = new ChapterWriteJobs(new M4bChapterWriter(_tool, NullLogger<M4bChapterWriter>.Instance), _refresher, [_listener, new ThrowingListener()], _clock, NullLogger<ChapterWriteJobs>.Instance);
     }
 
     public void Dispose()
@@ -111,6 +112,67 @@ public sealed class ChapterWriteJobsTests : IDisposable
     public void Get_NothingWritten_IsNull()
     {
         Assert.Null(_jobs.Get(_target.ItemId));
+    }
+
+    [Fact]
+    public async Task Write_TellsListenersTheOldAndNewFile_EvenWhenOneThrows()
+    {
+        var before = FileStamp.Of(_target.Path);
+
+        _jobs.Start(_target with { Source = "Silence" });
+        await WaitFor(ChapterWriteState.Done);
+
+        var (target, old, now) = Assert.Single(_listener.Replaced);
+        Assert.Equal("Silence", target.Source);
+        Assert.Equal(before, old);
+        Assert.Equal(FileStamp.Of(_target.Path), now);
+        Assert.NotEqual(old, now);
+    }
+
+    [Fact]
+    public async Task FailedWrite_TellsNoListener()
+    {
+        _tool.CopyHash = "MD5=different";
+
+        _jobs.Start(_target);
+        await WaitFor(ChapterWriteState.Failed);
+
+        Assert.Empty(_listener.Replaced);
+    }
+
+    [Fact]
+    public async Task Restore_TellsListeners_AndForgetsTheLastWrite()
+    {
+        _jobs.Start(_target);
+        await WaitFor(ChapterWriteState.Done);
+        var written = FileStamp.Of(_target.Path);
+
+        Assert.Null(_jobs.Restore(_target.ItemId, _target.Path));
+
+        var (itemId, old, now) = Assert.Single(_listener.Restored);
+        Assert.Equal(_target.ItemId, itemId);
+        Assert.Equal(written, old);
+        Assert.Equal(FileStamp.Of(_target.Path), now);
+        Assert.Null(_jobs.Get(_target.ItemId));
+    }
+
+    private sealed class RecordingListener : IChapterWriteListener
+    {
+        public List<(ChapterWriteTarget Target, FileStamp Before, FileStamp After)> Replaced { get; } = [];
+
+        public List<(Guid ItemId, FileStamp Before, FileStamp After)> Restored { get; } = [];
+
+        public void FileReplaced(ChapterWriteTarget target, FileStamp before, FileStamp after) => Replaced.Add((target, before, after));
+
+        public void FileRestored(Guid itemId, string path, FileStamp before, FileStamp after) => Restored.Add((itemId, before, after));
+    }
+
+    // A listener failing after the swap mustn't turn a good write into a failed one
+    private sealed class ThrowingListener : IChapterWriteListener
+    {
+        public void FileReplaced(ChapterWriteTarget target, FileStamp before, FileStamp after) => throw new IOException("disk full");
+
+        public void FileRestored(Guid itemId, string path, FileStamp before, FileStamp after) => throw new IOException("disk full");
     }
 
     private sealed class FakeRefresher : IItemRefresher

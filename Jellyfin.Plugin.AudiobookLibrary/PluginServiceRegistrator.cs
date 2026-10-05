@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Jellyfin.Plugin.AudiobookLibrary.Admin;
 using Jellyfin.Plugin.AudiobookLibrary.Audible;
 using Jellyfin.Plugin.AudiobookLibrary.Chapters;
 using Jellyfin.Plugin.AudiobookLibrary.ChapterWriting;
@@ -66,10 +67,21 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IItemRefresher, JellyfinItemRefresher>();
         serviceCollection.AddSingleton<M4bChapterWriter>();
 
+        // One file for every ASIN and chapter source, a singleton so every request shares its lock
+        serviceCollection.AddSingleton(services => new FileRecordStore(
+            Path.Combine(DataFolder(services, string.Empty), "files.json"),
+            services.GetRequiredService<ILogger<FileRecordStore>>()));
+        serviceCollection.AddSingleton<IChapterWriteListener>(services => new AdminChapterListener(
+            services.GetRequiredService<FileRecordStore>(),
+            services.GetRequiredService<SilenceCache>(),
+            TimeProvider.System));
+        serviceCollection.AddSingleton<AdminLibrary>();
+
         // A singleton so one write at a time holds across every request, and shutdown waits for a running swap
         serviceCollection.AddSingleton(services => new ChapterWriteJobs(
             services.GetRequiredService<M4bChapterWriter>(),
             services.GetRequiredService<IItemRefresher>(),
+            services.GetServices<IChapterWriteListener>(),
             TimeProvider.System,
             services.GetRequiredService<ILogger<ChapterWriteJobs>>()));
     }

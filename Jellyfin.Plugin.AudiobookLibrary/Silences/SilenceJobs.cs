@@ -68,8 +68,11 @@ public sealed partial class SilenceJobs : IDisposable
             var job = new SilenceJob(target);
             _jobs[key] = job;
             existing?.Dispose();
+
+            // Read before starting, the background task can be past Queued by the time Task.Run returns
+            var status = job.Snapshot();
             job.Run = Task.Run(() => RunAsync(key, job));
-            return job.Snapshot();
+            return status;
         }
     }
 
