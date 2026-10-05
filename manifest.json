@@ -2,11 +2,19 @@
     {
         "guid": "4cecc660-432f-4714-8958-b5da8537e55d",
         "name": "Audiobook Library",
-        "description": "Plays audiobooks in a chapter-aware player styled after Audiobookshelf's. The now-playing bar shows chapter marks and the current chapter, with chapter skip, 10-second skips, speed and a chapter list. On phones, tapping the bar opens a full-page player. Playback speed is remembered for each book and each user.\n",
+        "description": "Plays audiobooks in a chapter-aware player styled after Audiobookshelf's. The now-playing bar shows chapter marks and the current chapter, with chapter skip, 10-second skips, speed and a chapter list. On phones, tapping the bar opens a full-page player. Playback speed is remembered for each book and each user. Admins can add chapters to books from Audible or from silences.\n",
         "overview": "Chapter-aware audiobook player for Jellyfin's web client and apps",
         "owner": "tmorrell",
         "category": "General",
         "versions": [
+            {
+                "version": "0.3.0.0",
+                "changelog": "Adds chapter tools for audiobooks without good chapters, on the plugin's admin page. Match a file to its Audible book by ASIN to get Audible's chapter list, or detect chapter breaks from long silences with Jellyfin's own ffmpeg. Review the preview, remove any wrong marks, and apply. Chapters are written into M4B files without re-encoding, the new file is checked against the original before it replaces it, and the original is kept as a .bak that can be restored from the page. MP3 books can store an ASIN, chapter tools for them come later.\n",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/adSORRYvance/Jellyfin-Audiobook/releases/download/v0.3.0.0/audiobook-library_0.3.0.0.zip",
+                "checksum": "935ccf79f18abbeb9bdbc8d601d7c6d7",
+                "timestamp": "2026-10-05T17:17:05Z"
+            },
             {
                 "version": "0.2.0.0",
                 "changelog": "First stable release of the chapter-aware player. Audiobooks get their own now-playing bar styled after Audiobookshelf's, with chapter marks, previous and next chapter, 10-second skips, speed and a chapter list. On phones, tapping the bar opens a full-page player. Chapters work across split M4B and multi-file MP3 books, and stopping keeps your place in Continue Listening. New since 0.1.4.2: playback speed is remembered for each book and each user.\n",
