@@ -1,7 +1,8 @@
 // Audiobook Library player for jellyfin-web, loaded as a window plugin through config.json.
 // playbackManager hands us anything whose Type is AudioBook, and music and video keep the stock players.
 // While a book plays our bar stands in for Jellyfin's now-playing bar, and on phones tapping it opens a full page.
-// playbackManager also reports progress to the server for us, so resume and Continue Listening need nothing extra here.
+// A book split over several files plays as one, the bar and buttons work in book time and we change files through playbackManager.
+// playbackManager reports each file's progress to the server, and for split books we also save the place in the whole book.
 (function () {
     'use strict';
 
@@ -12,6 +13,9 @@
 
     // Tapping + five times in a row sends one save instead of five
     const SPEED_SAVE_DELAY_MS = 1000;
+
+    // How often a split book's place is saved while it plays, pausing and stopping save it straight away too
+    const POSITION_SAVE_MS = 15000;
 
     // jellyfin-web tags <html> with this in the app and on phones, narrow windows get the same layout
     const COMPACT_QUERY = '(max-width: 700px)';
@@ -124,7 +128,22 @@
                 this._chapterIndex = -2;
                 this._currentSrc = null;
                 this._currentTime = null;
+                this._startAt = null;
+                this._started = Promise.resolve();
                 this._dragging = false;
+
+                // The book's files in book seconds, null until the chapters answer arrives
+                this._book = null;
+                this._trackIndex = 0;
+
+                // Set while we wait for playbackManager to bring up a file we asked for, so play() knows it's the same book
+                this._pendingTrack = null;
+                this._switching = false;
+
+                // Saving waits until the saved place has been read, otherwise the first save could overwrite it
+                this._positionReady = false;
+                this._positionTouched = false;
+                this._lastPositionSave = 0;
                 this._loadToken = 0;
                 this._speedToken = 0;
                 this._speedTouched = false;
@@ -164,43 +183,66 @@
                 this._ensureView();
 
                 const item = options.item || {};
+                const pending = this._pendingTrack;
+                this._pendingTrack = null;
+                this._switching = false;
+
+                // A file we asked for ourselves is the same book carrying on, so its chapters, speed and place stay
+                const sameBook = !!(pending && this._book && nav.sameId(pending.itemId, item.Id));
+                if (sameBook) {
+                    this._trackIndex = pending.index;
+                } else {
+                    this._book = null;
+                    this._trackIndex = 0;
+                    this._chapters = [];
+                    this._chapterIndex = -2;
+                    this._positionReady = false;
+                    this._positionTouched = false;
+                    this._closeSheets();
+                }
+
                 this._item = item;
-                this._chapters = [];
-                this._chapterIndex = -2;
                 this._active = true;
-                this._closeSheets();
                 this._renderItem(item);
-                this._renderChapters();
                 this._renderCompact();
                 this._renderVisibility();
 
                 const audio = this._audio;
                 this._currentSrc = options.url;
                 this._currentTime = null;
+                this._startAt = sameBook ? pending.offset : (options.playerStartPositionTicks || 0) / TICKS_PER_SECOND;
                 audio.src = options.url;
+                audio.addEventListener('loadedmetadata', () => this._applyStart(), { once: true });
 
-                const startTicks = options.playerStartPositionTicks || 0;
-                if (startTicks > 0) {
-                    audio.addEventListener('loadedmetadata', () => {
-                        audio.currentTime = startTicks / TICKS_PER_SECOND;
-                    }, { once: true });
+                if (!sameBook) {
+                    this._renderChapters();
                 }
 
-                this._loadChapters(item);
-                this._loadSpeed(item);
-
                 // The WebView can refuse autoplay once the tap is a few awaits behind us, the play button still works then
-                return audio.play().catch((err) => {
+                this._started = audio.play().catch((err) => {
                     console.warn('Audiobook Library: autoplay refused', err);
                 });
+
+                if (!sameBook) {
+                    this._loadBook(item);
+                    this._loadSpeed(item);
+                }
+
+                return this._started;
             }
 
             stop(destroyPlayer) {
                 const src = this._currentSrc;
+                const switching = this._switching;
                 this._audio?.pause();
 
                 // Closing the player right after a speed change shouldn't lose it to the save delay
                 this._flushSpeedSave();
+
+                // A file change stops us too, but its place was saved when it started
+                if (!switching) {
+                    this._savePosition();
+                }
 
                 // playbackManager reads currentTime() while handling this to report the stop position
                 // Firing it after the reset made the server save 0 and drop the book from Continue Listening
@@ -213,10 +255,18 @@
 
                 this._currentSrc = null;
                 this._currentTime = null;
-                this._loadToken++;
-                this._active = false;
-                this._pageOpen = false;
-                this._renderVisibility();
+                this._startAt = null;
+
+                // During a file change the bar and the book stay up, the next file is moments away
+                if (!switching) {
+                    this._loadToken++;
+                    this._active = false;
+                    this._pageOpen = false;
+                    this._book = null;
+                    this._pendingTrack = null;
+                    this._positionReady = false;
+                    this._renderVisibility();
+                }
 
                 if (destroyPlayer) {
                     this.destroy();
@@ -229,8 +279,10 @@
                 this._flushSpeedSave();
                 this._inputManager?.off(document, this._onBackCommand);
                 document.removeEventListener('viewbeforeshow', this._onViewBeforeShow);
+                window.removeEventListener('pagehide', this._onPageHide);
                 this._compactQuery?.removeEventListener('change', this._onCompactChange);
                 document.body.classList.remove('abl-active');
+                this._releaseJellyfinBar();
                 this._roots.forEach((root) => root.remove());
                 this._scrim?.remove();
                 this._audio?.remove();
@@ -244,13 +296,15 @@
                 return this._currentSrc;
             }
 
+            // playbackManager reports this against the file it started, so it's always the time inside the current file
+            // Remote seeks from another device arrive here too, also in file time
             currentTime(val) {
                 if (!this._audio) {
                     return 0;
                 }
 
                 if (val != null) {
-                    this._seekTo(val / 1000);
+                    this._seekTrack(val / 1000);
                     return;
                 }
 
@@ -259,11 +313,11 @@
                     return this._currentTime * 1000;
                 }
 
-                return this._audio.currentTime * 1000;
+                return this._trackTime() * 1000;
             }
 
             duration() {
-                const d = this._durationSec();
+                const d = this._trackDurationSec();
                 return d > 0 ? d * 1000 : null;
             }
 
@@ -398,6 +452,10 @@
                     e.stopPropagation();
                 };
                 this._inputManager?.on(document, this._onBackCommand);
+
+                // Closing the tab never calls stop, so the place is saved on the way out
+                this._onPageHide = () => this._savePosition();
+                window.addEventListener('pagehide', this._onPageHide);
             }
 
             _onClick(root, e) {
@@ -451,18 +509,18 @@
 
                         break;
                     case 'back':
-                        this._seekTo(position - SKIP_SECONDS);
+                        this._seekBook(position - SKIP_SECONDS);
                         break;
                     case 'forward':
-                        this._seekTo(position + SKIP_SECONDS);
+                        this._seekBook(position + SKIP_SECONDS);
                         break;
                     case 'prev':
-                        this._seekTo(nav.previousTarget(this._chapters, position));
+                        this._seekBook(nav.previousTarget(this._chapters, position));
                         break;
                     case 'next': {
                         const target = nav.nextTarget(this._chapters, position);
                         if (target != null) {
-                            this._seekTo(target);
+                            this._seekBook(target);
                         }
 
                         break;
@@ -507,7 +565,7 @@
                     });
                     seek.addEventListener('change', () => {
                         this._dragging = false;
-                        this._seekTo(Number(seek.value));
+                        this._seekBook(Number(seek.value));
                     });
                 });
 
@@ -525,12 +583,19 @@
                 audio.addEventListener('pause', () => {
                     this._renderPlayState();
                     this._events.trigger(this, 'pause');
+                    this._savePosition();
                 });
                 audio.addEventListener('timeupdate', () => {
                     this._currentTime = audio.currentTime;
                     this._events.trigger(this, 'timeupdate');
+
+                    const position = this._position();
                     if (!this._dragging) {
-                        this._renderPosition(audio.currentTime);
+                        this._renderPosition(position);
+                    }
+
+                    if (!audio.paused && Date.now() - this._lastPositionSave >= POSITION_SAVE_MS) {
+                        this._savePosition(position);
                     }
                 });
                 audio.addEventListener('durationchange', () => {
@@ -542,7 +607,19 @@
                     this._renderVolume();
                     this._events.trigger(this, 'volumechange');
                 });
-                audio.addEventListener('ended', () => this.stop(false));
+                audio.addEventListener('ended', () => {
+                    if (this._pendingTrack) {
+                        return;
+                    }
+
+                    // The end of a file is only the end of the book when it's the last file
+                    const next = this._trackIndex + 1;
+                    if (this._book && next < this._book.tracks.length) {
+                        this._playTrack(next, 0);
+                    } else {
+                        this.stop(false);
+                    }
+                });
                 audio.addEventListener('error', () => {
                     console.warn('Audiobook Library: audio error', audio.error?.code);
                 });
@@ -562,28 +639,133 @@
 
             // Chapters
 
-            _loadChapters(item) {
+            _loadBook(item) {
                 const token = ++this._loadToken;
                 const api = window.ApiClient;
                 if (!api || !item.Id) {
                     return;
                 }
 
+                // Asked for alongside the chapters, so a resume jump comes as soon as it can
+                const saved = api.getJSON(api.getUrl(`AudiobookLibrary/Books/${item.Id}/Position`))
+                    .catch((err) => {
+                        console.warn('Audiobook Library: could not load the saved place', err);
+                        return null;
+                    });
+
                 api.getJSON(api.getUrl(`AudiobookLibrary/Books/${item.Id}/Chapters`))
                     .then((book) => {
                         // A later play or stop bumps the token, so an old answer can't paint over a newer book
                         if (token !== this._loadToken) {
-                            return;
+                            return null;
                         }
 
-                        this._chapters = nav.chaptersForTrack(book, item.Id);
+                        const tracks = book?.Tracks || [];
+                        this._book = { tracks, duration: book?.DurationSec || 0 };
+                        this._trackIndex = Math.max(nav.trackIndex(tracks, item.Id), 0);
+                        this._chapters = nav.bookChapters(book);
                         this._chapterIndex = -2;
+                        this._renderItem(item);
                         this._renderChapters();
+
+                        // A single file keeps Jellyfin's own resume, which already knows where in the file we are
+                        if (tracks.length < 2) {
+                            return null;
+                        }
+
+                        // Waiting for playback to start keeps our jump from reaching playbackManager before it has finished starting this file
+                        return Promise.all([saved, this._started]).then(([position]) => this._resume(token, position));
                     })
                     .catch((err) => {
                         // Without chapters the player still works, it just looks like a book that has none
                         console.warn('Audiobook Library: could not load chapters', err);
                     });
+            }
+
+            // The saved place beats whichever file Jellyfin started, its folder Play button often starts the wrong one
+            _resume(token, position) {
+                if (token !== this._loadToken) {
+                    return;
+                }
+
+                this._positionReady = true;
+
+                // A skip or chapter tap made while we waited is what the listener wants now
+                if (this._positionTouched) {
+                    return;
+                }
+
+                const target = nav.resumeTarget(position?.PositionSec, this._book.duration);
+                if (target != null) {
+                    this._seekBook(target);
+                }
+            }
+
+            _savePosition(seconds = this._position()) {
+                const api = window.ApiClient;
+                if (!api || !this._positionReady || !this._item?.Id || !(this._book?.tracks.length > 1)) {
+                    return;
+                }
+
+                this._lastPositionSave = Date.now();
+
+                // keepalive lets the save finish when the tab is closing
+                // ApiClient.ajax can't ask for that, so this sets the same login header itself
+                fetch(api.getUrl(`AudiobookLibrary/Books/${this._item.Id}/Position`), {
+                    method: 'PUT',
+                    keepalive: true,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `MediaBrowser Token="${api.accessToken()}"`
+                    },
+                    body: JSON.stringify({ PositionSec: seconds })
+                })
+                    .then((res) => {
+                        if (!res.ok) {
+                            console.warn('Audiobook Library: could not save the place', res.status);
+                        }
+                    })
+                    .catch((err) => {
+                        console.warn('Audiobook Library: could not save the place', err);
+                    });
+            }
+
+            // Files
+
+            // Going through playbackManager gives the new file its own stream and play session, and reports the old one as stopped
+            // Swapping the src ourselves would leave Jellyfin reporting the new file's time against the old file
+            _playTrack(index, offset) {
+                const track = this._book.tracks[index];
+                this._pendingTrack = { itemId: track.ItemId, index, offset };
+                this._switching = true;
+                this._savePosition();
+                this._renderPosition(this._position());
+
+                this._playbackManager.play({
+                    ids: [track.ItemId],
+                    serverId: this._item?.ServerId,
+                    startPositionTicks: Math.round(offset * TICKS_PER_SECOND),
+                    fullscreen: false
+                }).catch((err) => {
+                    console.warn('Audiobook Library: could not open the next file', err);
+                    this._pendingTrack = null;
+                    this._switching = false;
+
+                    // Once our stop has run nothing is playing, so the bar shouldn't stay up
+                    if (!this._currentSrc) {
+                        this._active = false;
+                        this._book = null;
+                        this._renderVisibility();
+                    }
+                });
+            }
+
+            _applyStart() {
+                if (this._startAt > 0) {
+                    this._audio.currentTime = this._startAt;
+                }
+
+                this._startAt = null;
             }
 
             // Speed
@@ -665,7 +847,7 @@
                 // Split MP3 books name each file after its chapter, the album is the book
                 const title = item.Album || item.Name || 'Audiobook';
                 const author = item.AlbumArtist || item.Artists?.[0] || '';
-                const length = (item.RunTimeTicks || 0) / TICKS_PER_SECOND;
+                const length = this._book?.duration > 0 ? this._book.duration : (item.RunTimeTicks || 0) / TICKS_PER_SECOND;
 
                 this._each('.abl-book-title', (el) => {
                     el.textContent = title;
@@ -708,7 +890,7 @@
                     btn.append(title, start);
 
                     btn.addEventListener('click', () => {
-                        this._seekTo(chapter.start);
+                        this._seekBook(chapter.start);
                         this._closeSheets();
                     });
 
@@ -843,12 +1025,21 @@
                 const showBar = this._active && this._mediaControlAllowed;
                 this._bar.classList.toggle('abl-hidden', !showBar);
                 document.body.classList.toggle('abl-active', showBar);
+                if (!showBar) {
+                    this._releaseJellyfinBar();
+                }
 
                 this._page.classList.toggle('abl-hidden', !(this._active && this._pageOpen));
 
                 if (!this._active) {
                     this._closeSheets();
                 }
+            }
+
+            // Jellyfin slides its bar away while ours has it hidden, and a hidden element never finishes a slide
+            // Its slide's end is what adds hide, so we add it ourselves when we give the footer back
+            _releaseJellyfinBar() {
+                document.querySelectorAll('.nowPlayingBar.nowPlayingBar-hidden').forEach((el) => el.classList.add('hide'));
             }
 
             // Helpers
@@ -864,11 +1055,28 @@
                     || window.matchMedia(COMPACT_QUERY).matches;
             }
 
-            _position() {
+            // The time inside the current file, a start still waiting for metadata counts as already there
+            _trackTime() {
+                if (this._startAt != null) {
+                    return this._startAt;
+                }
+
                 return this._audio ? this._audio.currentTime : 0;
             }
 
-            _durationSec() {
+            // The time in the whole book, which is what the bar, the buttons and the saved place use
+            // While the next file loads it's where that file will start, so the bar doesn't jump back
+            _position() {
+                const tracks = this._book?.tracks;
+                const pending = this._pendingTrack;
+                if (pending) {
+                    return nav.bookTime(tracks, pending.index, pending.offset);
+                }
+
+                return nav.bookTime(tracks, this._trackIndex, this._trackTime());
+            }
+
+            _trackDurationSec() {
                 const d = this._audio?.duration;
                 if (Number.isFinite(d) && d > 0) {
                     return d;
@@ -878,17 +1086,54 @@
                 return (this._item?.RunTimeTicks || 0) / TICKS_PER_SECOND;
             }
 
-            _seekTo(seconds) {
+            _durationSec() {
+                return this._book?.duration > 0 ? this._book.duration : this._trackDurationSec();
+            }
+
+            _seekTrack(seconds) {
                 if (!this._audio) {
                     return;
                 }
 
-                const target = nav.clamp(seconds, this._durationSec());
-                this._audio.currentTime = target;
+                const target = nav.clamp(seconds, this._trackDurationSec());
+
+                // Before metadata loads the element can't seek yet, so the start waits for it
+                if (this._audio.readyState < HTMLMediaElement.HAVE_METADATA) {
+                    this._startAt = target;
+                } else {
+                    this._audio.currentTime = target;
+                }
 
                 // currentTime() prefers this copy, so update it now rather than waiting for the next timeupdate
                 this._currentTime = target;
-                this._renderPosition(target);
+                this._renderPosition(this._position());
+            }
+
+            _seekBook(seconds) {
+                this._positionTouched = true;
+
+                const at = nav.locate(this._book?.tracks, seconds);
+                if (!at) {
+                    this._seekTrack(seconds);
+                    return;
+                }
+
+                const pending = this._pendingTrack;
+                if (pending) {
+                    // Another tap while a file loads only moves where it starts, a different file would mean two loads at once
+                    if (at.index === pending.index) {
+                        pending.offset = at.offset;
+                        this._renderPosition(this._position());
+                    }
+
+                    return;
+                }
+
+                if (at.index === this._trackIndex) {
+                    this._seekTrack(at.offset);
+                } else {
+                    this._playTrack(at.index, at.offset);
+                }
             }
 
             _openSheet(sheet) {

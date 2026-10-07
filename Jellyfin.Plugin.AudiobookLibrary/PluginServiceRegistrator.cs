@@ -27,10 +27,14 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddTransient<IStartupFilter, WebInjectionStartupFilter>();
         serviceCollection.AddSingleton<BookChapterService>();
 
-        // A singleton so every request shares the one lock around the speed files
+        // Singletons so every request shares the one lock around the speed files, and the one around the position files
         serviceCollection.AddSingleton(services => new SpeedStore(
             DataFolder(services, "speeds"),
             services.GetRequiredService<ILogger<SpeedStore>>()));
+        serviceCollection.AddSingleton(services => new PositionStore(
+            DataFolder(services, "positions"),
+            TimeProvider.System,
+            services.GetRequiredService<ILogger<PositionStore>>()));
 
         // The User-Agent tells the Audnexus maintainer who's calling if we ever cause trouble
         serviceCollection.AddHttpClient(AudnexusClient.HttpClientName, client =>
