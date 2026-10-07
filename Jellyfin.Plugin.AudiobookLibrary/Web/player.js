@@ -282,6 +282,7 @@
                 window.removeEventListener('pagehide', this._onPageHide);
                 this._compactQuery?.removeEventListener('change', this._onCompactChange);
                 document.body.classList.remove('abl-active');
+                this._releaseJellyfinBar();
                 this._roots.forEach((root) => root.remove());
                 this._scrim?.remove();
                 this._audio?.remove();
@@ -1024,12 +1025,21 @@
                 const showBar = this._active && this._mediaControlAllowed;
                 this._bar.classList.toggle('abl-hidden', !showBar);
                 document.body.classList.toggle('abl-active', showBar);
+                if (!showBar) {
+                    this._releaseJellyfinBar();
+                }
 
                 this._page.classList.toggle('abl-hidden', !(this._active && this._pageOpen));
 
                 if (!this._active) {
                     this._closeSheets();
                 }
+            }
+
+            // Jellyfin slides its bar away while ours has it hidden, and a hidden element never finishes a slide
+            // Its slide's end is what adds hide, so we add it ourselves when we give the footer back
+            _releaseJellyfinBar() {
+                document.querySelectorAll('.nowPlayingBar.nowPlayingBar-hidden').forEach((el) => el.classList.add('hide'));
             }
 
             // Helpers
