@@ -2,11 +2,19 @@
     {
         "guid": "4cecc660-432f-4714-8958-b5da8537e55d",
         "name": "Audiobook Library",
-        "description": "Plays audiobooks in a chapter-aware player styled after Audiobookshelf's. The now-playing bar shows chapter marks and the current chapter, with chapter skip, 10-second skips, speed and a chapter list. On phones, tapping the bar opens a full-page player. Playback speed is remembered for each book and each user. Admins can add chapters to books from Audible or from silences.\n",
+        "description": "Plays audiobooks in a chapter-aware player styled after Audiobookshelf's. The now-playing bar shows chapter marks and the current chapter, with chapter skip, 10-second skips, speed and a chapter list. On phones, tapping the bar opens a full-page player. Playback speed is remembered for each book and each user. Books split over several files play as one book and reopen where you left off. Admins can add chapters to books from Audible or from silences.\n",
         "overview": "Chapter-aware audiobook player for Jellyfin's web client and apps",
         "owner": "tmorrell",
         "category": "General",
         "versions": [
+            {
+                "version": "0.4.0.0",
+                "changelog": "Books split over several files, like a folder of MP3 chapters, GraphicAudio parts or a book in two M4Bs, now play as one book. The bar, skips, chapter buttons and chapter list cover the whole book, the next file starts on its own, and skips and seeks that cross into another file land in the right place. Each user's place in a split book is saved, so it reopens where they left off on any device, even when Jellyfin starts a different file. Also fixes Jellyfin's own now-playing bar staying on screen with its buttons pushed out of view after a book stopped.\n",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/adSORRYvance/Jellyfin-Audiobook/releases/download/v0.4.0.0/audiobook-library_0.4.0.0.zip",
+                "checksum": "e47f21a160b273ed9d4f7e80ffe22ad9",
+                "timestamp": "2026-10-08T01:54:56Z"
+            },
             {
                 "version": "0.3.0.0",
                 "changelog": "Adds chapter tools for audiobooks without good chapters, on the plugin's admin page. Match a file to its Audible book by ASIN to get Audible's chapter list, or detect chapter breaks from long silences with Jellyfin's own ffmpeg. Review the preview, remove any wrong marks, and apply. Chapters are written into M4B files without re-encoding, the new file is checked against the original before it replaces it, and the original is kept as a .bak that can be restored from the page. MP3 books can store an ASIN, chapter tools for them come later.\n",
